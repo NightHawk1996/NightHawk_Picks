@@ -1,0 +1,5 @@
+name = "hawk"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+# DISCORD_PUBLIC_KEY is set with: npx wrangler secret put DISCORD_PUBLIC_KEY

@@ -1,0 +1,13 @@
+{
+  "name": "nighthawk-picks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "register": "node scripts/register-commands.mjs",
+    "setup-server": "node setup-server.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.157.0"
+  }
+}
