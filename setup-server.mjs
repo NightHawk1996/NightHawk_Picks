@@ -134,7 +134,9 @@ Premier League · Championship · La Liga · Serie A · Bundesliga · Ligue 1 ·
 
 **5️⃣ Every market from one grid** – win, draw, goals, both teams to score and builders all come from the same scoreline chances, so they always agree with each other.
 
-**What Hawk can't see (yet):** injuries, team news, the referee, the weather or bookies' prices. When something big changes – a star striker out – use your own judgement.`,
+**Hawk's numbers are its own.** Bookies' prices are shown next to them for comparison but never mixed in – so you always know what Hawk thinks.
+
+**What Hawk can't see (yet):** injuries, team news, the referee or the weather. When something big changes – a star striker out – use your own judgement.`,
   },
   {
     title: "📅 What gets posted, and when",
@@ -151,15 +153,17 @@ League channels, builders and accas are cleared each morning so only the current
   },
   {
     title: "🃏 Reading Hawk's posts",
-    description: `**🎯 Arsenal 74% · Draw 19% · Spurs 8% → Arsenal ✅ · 2-0**
-Hawk's chance for each result, its pick, and the most likely score.
+    description: `**🎯 Arsenal 74% (70%) · Draw 19% (21%) · Spurs 8% (9%) → Arsenal ✅ · 2-0**
+Hawk's chance for each result, the bookies' chance in brackets (their margin taken out), Hawk's pick, and the most likely score.
 
 **The traffic lights**
 ✅ 70%+ strong · 🟡 55–69% only at the right price · ❌ under 55% a lean, not a bet
 
 **Form** – 🟢 win · 🟡 draw · 🔴 loss, last five games in that competition, latest on the right.
 
-**"Worth it at 6/5 or bigger"** – the break-even price. If your bookie offers less than this, the bet isn't paying enough for the risk. It's always rounded up to the next standard price, so taking it or bigger is never a losing bet on Hawk's numbers.
+**Hawk's fair price** – the odds that match Hawk's chance, e.g. 58% → 8/11. It's what the price would be if Hawk is right.
+
+**📊 Bookies' price bigger than Hawk's** – flagged when the bookies offer, say, Evens and Hawk's fair price is 8/11. Hawk has been tested against two full seasons of bookies' prices and **hasn't beaten them** – when they disagree, the bookies are usually right. So treat 📊 as a second opinion, not a tip. Every one is tracked in {#results} and {#model-check}.
 
 **🔍 Why?** – under every post. Pick a game and Hawk shows its full reasoning, visible only to you.`,
   },

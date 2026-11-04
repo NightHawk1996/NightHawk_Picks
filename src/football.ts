@@ -1,6 +1,7 @@
 // Football data from football-data.org (free tier): fixtures, form, tables and predictions.
 
-import { buildRatings, predict, light, pct, fairOdds, type Prediction } from "./model";
+import { buildRatings, predict, light, pct, fairOdds, toFraction, type Prediction } from "./model";
+import { oddsFor, disagreements, type GameOdds, type Disagreement } from "./odds";
 
 export const LEAGUES: Record<string, { name: string; emoji: string }> = {
   PL: { name: "Premier League", emoji: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
@@ -89,6 +90,10 @@ async function getJson(url: string, token: string): Promise<any> {
 
 // One request gets recent results (for form and ratings) and upcoming fixtures.
 // Every command uses the same window, so they share the cache.
+// Older games (last season etc.) come from the history files; the live data covers the
+// last HISTORY_DAYS. This is where one hands over to the other.
+export const historyCutoff = (now: Date) => new Date(now.getTime() - HISTORY_DAYS * DAY);
+
 export async function getMatches(code: string, token: string, now: Date): Promise<Match[]> {
   const from = new Date(now.getTime() - HISTORY_DAYS * DAY);
   const to = new Date(now.getTime() + AHEAD_DAYS * DAY);
@@ -158,15 +163,15 @@ export function fitLines(blocks: string[], limit = 3900, more = "_…more not sh
 // One pass works out both the league post and the bet builders, so the data is
 // only fetched and processed once.
 // ---------------------------------------------------------------------------
-export type Predicted = Prediction & { homeName: string; awayName: string };
+export type Predicted = Prediction & { homeName: string; awayName: string; odds?: GameOdds; gaps: Disagreement[] };
 
-export async function leagueDay(code: string, token: string, now = new Date(), hours = 168, builderChannelId?: string, aheadUntil?: Date) {
+export async function leagueDay(code: string, token: string, now = new Date(), hours = 168, builderChannelId?: string, aheadUntil?: Date, history: Match[] = [], oddsGames: GameOdds[] = []) {
   const builderLink = builderChannelId ? `<#${builderChannelId}>` : "#bet-builders";
   const l = league(code);
   const to = new Date(now.getTime() + hours * 3600 * 1000);
   const matches = await getMatches(code, token, now);
 
-  const ratings = buildRatings(matches, now);
+  const ratings = buildRatings(history.length ? [...history, ...matches] : matches, now);
   const upcoming = matches.filter((m) => {
     const kickOff = new Date(m.utcDate);
     return ["SCHEDULED", "TIMED", "POSTPONED"].includes(m.status) && kickOff > now && kickOff <= to;
@@ -181,7 +186,7 @@ export async function leagueDay(code: string, token: string, now = new Date(), h
       .filter((m) => ["SCHEDULED", "TIMED"].includes(m.status) && new Date(m.utcDate) > now && new Date(m.utcDate) <= aheadUntil)
       .sort((x, y) => x.utcDate.localeCompare(y.utcDate))
       .slice(0, AHEAD_LIMIT);
-    for (const m of soon) ahead.push({ m, p: predictMatch(ratings, m) });
+    for (const m of soon) ahead.push({ m, p: predictMatch(ratings, m, oddsGames) });
   }
 
   const daily = hours <= 24;
@@ -206,7 +211,7 @@ export async function leagueDay(code: string, token: string, now = new Date(), h
     const awayForm = dots(formFor(m.awayTeam.id, matches, kickOff));
     let line = `${time} · **${teamName(m.homeTeam)}** v **${teamName(m.awayTeam)}**\n　${homeForm}  v  ${awayForm}`;
     if (m.status !== "POSTPONED" && predictions.length < PREDICT_LIMIT) {
-      const p = ahead.find((x) => x.m === m)?.p ?? predictMatch(ratings, m);
+      const p = ahead.find((x) => x.m === m)?.p ?? predictMatch(ratings, m, oddsGames);
       predictions.push({ m, p });
       line += "\n" + predictionLine(p);
     }
@@ -221,7 +226,7 @@ export async function leagueDay(code: string, token: string, now = new Date(), h
     title,
     description: top + fitLines([...days].map(([day, lines]) => `**${day}**\n${lines.join("\n")}\n\n`), 3700, "_…more fixtures not shown_") + pointer,
     color: COLOUR,
-    footer: { text: "Form: last 5, latest on the right · Times in your time zone · Powered by Hawk 🦅" },
+    footer: { text: `${oddsGames.length ? "(Brackets) = the bookies' chance, margin removed · " : ""}Form: last 5, latest on the right · Times in your time zone${predictions.some((x) => x.p.gaps.length) ? `\n${GAP_NOTE}` : ""} · Powered by Hawk 🦅` },
   };
 
   return { fixtures, builders: buildersEmbed(l, withBuilder, daily), builderCount: withBuilder.length, predictions, ahead, matches, ratings, league: l, nextKickOff: null as Date | null };
@@ -238,7 +243,7 @@ function buildersEmbed(l: { name: string; emoji: string }, list: { m: Match; p: 
       return [
         `**${p.homeName} v ${p.awayName}** · <t:${kickOff}:${daily ? "t" : "f"}>`,
         ...b.legs.map((x) => `• ${x.label} (${pct(x.p)})`),
-        `Together **${pct(b.p)}** · worth it at **${fairOdds(b.p)}** or bigger\n\n`,
+        `Together **${pct(b.p)}** · Hawk's fair price **${fairOdds(b.p)}**\n\n`,
       ].join("\n");
     });
   return {
@@ -351,10 +356,19 @@ export async function formEmbed(code: string, query: string, token: string, now 
 // ---------------------------------------------------------------------------
 // Predictions
 // ---------------------------------------------------------------------------
-export const predictMatch = (ratings: ReturnType<typeof buildRatings>, m: Match): Predicted => {
+export const predictMatch = (ratings: ReturnType<typeof buildRatings>, m: Match, oddsGames: GameOdds[] = []): Predicted => {
   const homeName = teamName(m.homeTeam), awayName = teamName(m.awayTeam);
-  return { ...predict(ratings, m.homeTeam, m.awayTeam, homeName, awayName), homeName, awayName };
+  const p = predict(ratings, m.homeTeam, m.awayTeam, homeName, awayName);
+  const odds = oddsFor(m, oddsGames);
+  const over = p.legs.find((l) => l.label === "Over 2.5 goals")!.p;
+  const gaps = odds ? disagreements({ H: p.home, D: p.draw, A: p.away, over }, odds, { home: homeName, away: awayName }) : [];
+  return { ...p, homeName, awayName, odds, gaps };
 };
+
+// 📊 One line per place the bookies' price is bigger than Hawk's fair price.
+export const gapLine = (g: Disagreement) =>
+  `📊 Bookies' best price for **${g.label}** is **${toFraction(g.best)}** – Hawk's fair price is **${fairOdds(g.hawk)}**`;
+export const GAP_NOTE = "📊 = the bookies' price is bigger than Hawk's fair price. Hawk hasn't beaten the bookies in testing, so treat it as a second opinion, not a tip.";
 
 export const pickOf = (p: Predicted) => {
   const options = [
@@ -368,11 +382,14 @@ export const pickOf = (p: Predicted) => {
 // One compact line for fixture lists and the daily post.
 function predictionLine(p: Predicted): string {
   const pick = pickOf(p);
-  return `　🎯 ${p.homeName} ${pct(p.home)} · Draw ${pct(p.draw)} · ${p.awayName} ${pct(p.away)} → **${pick.label}** ${light(pick.p)} · ${p.likely.h}-${p.likely.a}`;
+  const b = (x?: number) => (p.odds && x !== undefined ? ` (${pct(x)})` : "");
+  const c = p.odds?.chance;
+  const line = `　🎯 ${p.homeName} ${pct(p.home)}${b(c?.H)} · Draw ${pct(p.draw)}${b(c?.D)} · ${p.awayName} ${pct(p.away)}${b(c?.A)} → **${pick.label}** ${light(pick.p)} · ${p.likely.h}-${p.likely.a}`;
+  return [line, ...p.gaps.slice(0, 2).map((g) => `　${gapLine(g)}`)].join("\n");
 }
 
 // /predict – the full card for a team's next match.
-export async function predictEmbed(code: string, query: string, token: string, now = new Date()) {
+export async function predictEmbed(code: string, query: string, token: string, now = new Date(), history: Match[] = [], oddsGames: GameOdds[] = []) {
   const l = league(code);
   const [{ total }, matches] = await Promise.all([getStandings(code, token), getMatches(code, token, now)]);
   const { match: row, suggestions } = findTeam(query, total.length ? total : teamsFrom(matches));
@@ -386,7 +403,7 @@ export async function predictEmbed(code: string, query: string, token: string, n
     .sort((a, b) => a.utcDate.localeCompare(b.utcDate))[0];
   if (!next) throw new Error(`${teamName(row.team)} have no ${l.name} game in the next ${AHEAD_DAYS} days.`);
 
-  const p = predictMatch(buildRatings(matches, now), next);
+  const p = predictMatch(buildRatings([...history, ...matches], now), next, oddsGames);
   const pick = pickOf(p);
   const leg = (label: string) => p.legs.find((x) => x.label === label)!;
   const show = (label: string) => { const x = leg(label); return `${x.label} **${pct(x.p)}** ${light(x.p)}`; };
@@ -395,8 +412,19 @@ export async function predictEmbed(code: string, query: string, token: string, n
   const fields = [
     {
       name: "🎯 Result",
-      value: `🏠 ${p.homeName} **${pct(p.home)}** · 🤝 Draw **${pct(p.draw)}** · ✈️ ${p.awayName} **${pct(p.away)}**\nHawk's pick: **${pick.label}** ${light(pick.p)} – worth it at **${fairOdds(pick.p)}** or bigger`,
+      value: `🏠 ${p.homeName} **${pct(p.home)}** · 🤝 Draw **${pct(p.draw)}** · ✈️ ${p.awayName} **${pct(p.away)}**\nHawk's pick: **${pick.label}** ${light(pick.p)} – Hawk's fair price **${fairOdds(pick.p)}**`,
     },
+    ...(p.odds
+      ? [{
+          name: "📊 Hawk v the bookies",
+          value: [
+            `Bookies: ${p.homeName} **${pct(p.odds.chance.H)}** · Draw **${pct(p.odds.chance.D)}** · ${p.awayName} **${pct(p.odds.chance.A)}** _(margin removed, ${p.odds.books} bookmakers)_`,
+            `Best prices: ${p.homeName} **${toFraction(p.odds.best.H)}** · Draw **${toFraction(p.odds.best.D)}** · ${p.awayName} **${toFraction(p.odds.best.A)}**`,
+            ...(p.odds.chance.over !== undefined ? [`Over 2.5 goals: Hawk **${pct(p.legs.find((l) => l.label === "Over 2.5 goals")!.p)}** · bookies **${pct(p.odds.chance.over)}**`] : []),
+            ...(p.gaps.length ? ["", ...p.gaps.map(gapLine), "_Hawk hasn't beaten the bookies in testing – a second opinion, not a tip._"] : ["", "_Hawk and the bookies broadly agree on this one._"]),
+          ].join("\n"),
+        }]
+      : []),
     {
       name: "📊 Likely score",
       value: `**${p.likely.h}-${p.likely.a}** (${pct(p.likely.p)}) · expected goals ${p.xgHome.toFixed(1)} – ${p.xgAway.toFixed(1)}`,
@@ -412,7 +440,7 @@ export async function predictEmbed(code: string, query: string, token: string, n
     {
       name: "🧩 Hawk's bet builder",
       value: p.builder
-        ? `${p.builder.legs.map((x) => `• ${x.label} (${pct(x.p)})`).join("\n")}\nTogether: **${pct(p.builder.p)}** – worth it at **${fairOdds(p.builder.p)}** or bigger\n_Priced as one bet, not leg by leg._`
+        ? `${p.builder.legs.map((x) => `• ${x.label} (${pct(x.p)})`).join("\n")}\nTogether: **${pct(p.builder.p)}** – Hawk's fair price **${fairOdds(p.builder.p)}**\n_Priced as one bet, not leg by leg._`
         : "Nothing strong enough here – no builder lands 40%+ with real legs.",
     },
   ];

@@ -11,7 +11,7 @@ if (!DISCORD_TOKEN || !DISCORD_APPLICATION_ID || !GUILD_ID) {
 
 const leagueOption = {
   name: "league",
-  description: "Which competition (default: Premier League)",
+  description: "Which competition (default: Premier League – or for a team, wherever it plays)",
   type: 3, // string
   required: false,
   choices: [
@@ -53,6 +53,27 @@ const commands = [
     options: [
       { name: "team", description: "Team name, e.g. Arsenal or Man City", type: 3, required: true },
       leagueOption,
+    ],
+  },
+  {
+    name: "history",
+    description: "Import match history from football-data.co.uk (admin only)",
+    default_member_permissions: "0",
+    options: [
+      {
+        name: "league",
+        description: "Which league",
+        type: 3,
+        required: true,
+        choices: leagueOption.choices.filter((c) => ["PL", "ELC", "PD", "SA", "BL1", "FL1"].includes(c.value)),
+      },
+      {
+        name: "season",
+        description: "This season (default) or last season",
+        type: 3,
+        required: false,
+        choices: [{ name: "This season", value: "this" }, { name: "Last season", value: "last" }],
+      },
     ],
   },
   {

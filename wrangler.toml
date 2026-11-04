@@ -6,7 +6,7 @@ compatibility_date = "2025-09-01"
 # hour that is 9am in Dublin (so summer and winter both work):
 # one league per minute 9:00–9:06, then Hawk's Acca at 9:08.
 [triggers]
-crons = ["0-6,8-11 8,9 * * *"]
+crons = ["0-6,8-11 8,9 * * *", "20-31 3 * * 2,5"]
 
 # Storage for saved picks (free Cloudflare KV). Paste your id from:
 #   npx wrangler kv namespace create HAWK

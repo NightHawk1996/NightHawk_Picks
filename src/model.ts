@@ -272,10 +272,13 @@ const LADDER: [number, number][] = [
   [10, 1], [11, 1], [12, 1], [14, 1], [16, 1], [20, 1], [25, 1], [33, 1], [40, 1], [50, 1], [66, 1], [100, 1],
 ];
 
-// Break-even price as a fraction, e.g. 50% → "Evens", 33% → "2/1".
-// Rounded UP to the next standard price, so taking that price or bigger is always worth it.
-export const fairOdds = (p: number) => {
-  const need = 1 / p - 1;
-  const hit = LADDER.find(([a, b]) => a / b >= need - 1e-9) ?? LADDER[LADDER.length - 1];
-  return hit[0] === hit[1] ? "Evens" : `${hit[0]}/${hit[1]}`;
+// A decimal price as the nearest standard fraction, e.g. 2.0 → "Evens", 3.0 → "2/1".
+export const toFraction = (decimal: number) => {
+  const need = Math.max(decimal - 1, 0.01);
+  let best = LADDER[0];
+  for (const f of LADDER) if (Math.abs(Math.log(f[0] / f[1]) - Math.log(need)) < Math.abs(Math.log(best[0] / best[1]) - Math.log(need))) best = f;
+  return best[0] === best[1] ? "Evens" : `${best[0]}/${best[1]}`;
 };
+
+// Hawk's fair price – the odds that match Hawk's chance, e.g. 50% → "Evens", 58% → "8/11".
+export const fairOdds = (p: number) => toFraction(1 / p);

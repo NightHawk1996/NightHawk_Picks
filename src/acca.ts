@@ -102,7 +102,7 @@ export function accaEmbed(kind: AccaKind, acca: StoredAcca | null, now: Date, em
   const parts = [
     acca.legs.map(line).join("\n"),
     "",
-    `**Together: ${pct(acca.p)}** – worth it at **${fairOdds(acca.p)}** or bigger`,
+    `**Together: ${pct(acca.p)}** – Hawk's fair price **${fairOdds(acca.p)}**`,
     `_Every leg has to land – ${acca.legs.length} legs at these chances come to ${pct(acca.p)} together._`,
   ];
   if (acca.safer) {
@@ -110,7 +110,7 @@ export function accaEmbed(kind: AccaKind, acca: StoredAcca | null, now: Date, em
       "",
       "🛡️ **Safer 4-leg version**",
       acca.safer.legs.map((l) => `• ${l.home} v ${l.away} – **${l.label}** (${pct(l.p)})`).join("\n"),
-      `**Together: ${pct(acca.safer.p)}** – worth it at **${fairOdds(acca.safer.p)}** or bigger`,
+      `**Together: ${pct(acca.safer.p)}** – Hawk's fair price **${fairOdds(acca.safer.p)}**`,
     );
   }
   const rule = kind === "around" ? "The strongest pick from each league" : "One leg per game, 80%+ each";

@@ -16,7 +16,10 @@ interface AllTime {
   builders: Tally;
   accas: Tally;
   leagues: Record<string, Tally>; // picks by league
+  gaps?: Gaps; // 📊 where the bookies' price was bigger than Hawk's fair price
 }
+interface Gaps { n: number; sumP: number; sumB: number; won: number; profit: number }
+const noGaps = (): Gaps => ({ n: 0, sumP: 0, sumB: 0, won: 0, profit: 0 });
 
 const BANDS = [
   { key: "90", label: "90%+", lo: 0.9, hi: 1.01 },
@@ -34,7 +37,7 @@ const pc = (x: number) => `${Math.round(x * 100)}%`;
 const settled = (i: GradedItem) => i.outcome === "won" || i.outcome === "lost";
 
 function summarise(items: GradedItem[]) {
-  const out = { bands: Object.fromEntries(BANDS.map((b) => [b.key, empty()])) as Record<string, Tally>, builders: empty(), accas: empty(), picks: empty(), leagues: {} as Record<string, Tally> };
+  const out = { bands: Object.fromEntries(BANDS.map((b) => [b.key, empty()])) as Record<string, Tally>, builders: empty(), accas: empty(), picks: empty(), leagues: {} as Record<string, Tally>, gaps: noGaps() };
   for (const i of items.filter(settled)) {
     if (i.kind === "pick" || i.kind === "leg") {
       const band = BANDS.find((b) => i.p >= b.lo && i.p < b.hi)!;
@@ -45,6 +48,11 @@ function summarise(items: GradedItem[]) {
       if (i.code) add((out.leagues[i.code] ??= empty()), i);
     }
     if (i.kind === "builder") add(out.builders, i);
+    if (i.kind === "gap") {
+      const g = out.gaps;
+      g.n++; g.sumP += i.p; g.sumB += i.bookies ?? 0;
+      if (i.outcome === "won") { g.won++; g.profit += (i.odds ?? 1) - 1; } else g.profit -= 1;
+    }
     if (i.kind === "acca") add(out.accas, i);
   }
   return out;
@@ -87,6 +95,8 @@ export async function runModelCheck(env: CheckEnv, now = new Date(), addToAllTim
       merge(combined.builders, week.builders);
       merge(combined.accas, week.accas);
       for (const [code, t] of Object.entries(week.leagues)) merge((combined.leagues[code] ??= empty()), t);
+      const g = (combined.gaps ??= noGaps());
+      g.n += week.gaps.n; g.sumP += week.gaps.sumP; g.sumB += week.gaps.sumB; g.won += week.gaps.won; g.profit += week.gaps.profit;
       combined.weeks.push(weekId);
       if (addToAllTime) await env.HAWK.put("modelcheck:alltime", JSON.stringify(combined));
     }
@@ -120,6 +130,18 @@ export async function runModelCheck(env: CheckEnv, now = new Date(), addToAllTim
       .sort((a, b) => b[1].n - a[1].n)
       .map(([code, t]) => `${LEAGUES[code]?.name ?? code} ${t.won}/${t.n} (${pc(t.won / t.n)}, said ${pc(t.sumP / t.n)})`);
 
+    // 📊 Hawk v the bookies, where they disagreed
+    const G = combined.gaps;
+    const gapLines = G && G.n
+      ? [
+          "",
+          `**📊 When the bookies' price was bigger than Hawk's fair price** _(${G.n} times)_`,
+          `It landed **${pc(G.won / G.n)}** – Hawk said ${pc(G.sumP / G.n)}, the bookies said ${pc(G.sumB / G.n)}. ` +
+            `${Math.abs(G.won / G.n - G.sumP / G.n) < Math.abs(G.won / G.n - G.sumB / G.n) ? "**Hawk** was closer" : "**The bookies** were closer"}${G.n < 30 ? " _(too few to read much into yet)_" : ""}.`,
+          `At the best price: **${G.profit >= 0 ? "+" : "−"}${Math.abs(G.profit).toFixed(1)} units** from ${G.n} 1-unit stakes.`,
+        ]
+      : [];
+
     // Plain-English summary
     const judged = BANDS.map((b) => ({ b, v: verdict(combined.bands[b.key]) })).filter((x) => x.v.mark !== "⏳");
     const worst = judged.filter((x) => x.v.mark === "⚠️").sort((x, y) => x.v.off - y.v.off)[0];
@@ -141,6 +163,7 @@ export async function runModelCheck(env: CheckEnv, now = new Date(), addToAllTim
         "",
         ...[groupLine("🧩 Builders", combined.builders), groupLine("🎟️ Accas", combined.accas)].filter(Boolean),
         ...(leagueLines.length ? ["", `**Picks by league:** ${leagueLines.join(" · ")}`] : []),
+        ...gapLines,
         "",
         summary,
       ].join("\n"),
@@ -148,12 +171,51 @@ export async function runModelCheck(env: CheckEnv, now = new Date(), addToAllTim
       footer: { text: `✅ on target · ⚠️ too confident · 🔼 too cautious · ⏳ under ${MIN_TO_JUDGE} bets · Accuracy only – no odds, so no profit figure · Powered by Hawk 🦅` },
     };
 
+    const embeds: any[] = [embed];
+    const bt = await env.HAWK.get<any>("backtest:summary", "json");
+    if (bt) embeds.push(backtestEmbed(bt));
     await cleanChannel(env, channelId, ch.botId, (m) => (m.embeds?.[0]?.title ?? "").includes(weekLabel));
-    await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [embed] });
+    await discord(env, "POST", `/channels/${channelId}/messages`, { embeds });
     line = `✅ #model-check – ${weekLabel}: ${items.filter(settled).length} graded this week, ${totalBets} all time`;
   } catch (err: any) {
     line = `⚠️ #model-check – failed: ${err.message}`;
   }
   await log(env, ch, `🧪 ${line}`);
   return line;
+}
+
+// 📚 The backtest – Hawk replayed over last season and this one, on your PC.
+function backtestEmbed(bt: any) {
+  const pc = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)}%` : "–");
+  const label = (c: string) => `20${c.slice(0, 2)}/${c.slice(2)}`;
+  const leagues = Object.entries(bt.leagues as Record<string, any>).map(([code, L]) => {
+    const v = L.value;
+    const value = v.bets ? ` · 💰 value bets ${v.bets}: ${v.profit >= 0 ? "+" : ""}${v.profit} units (${pc(v.profit, v.bets)})` : "";
+    return `**${LEAGUES[code]?.name ?? code}** · ${L.games} games · Hawk's pick right **${pc(L.hawkRight, L.games)}** (bookies' favourite ${pc(L.bookiesRight, L.bookiesGames)})${value}`;
+  });
+  const bands = Object.entries(bt.bands as Record<string, [number, number, number]>)
+    .filter(([, t]) => t[0])
+    .map(([b, [n, sumP, won]]) => {
+      const v = verdict({ n, sumP, won });
+      return `\`${b.padEnd(7)}\` ${n} legs · landed **${pc(won, n)}** (said ${pc(sumP, n)}) ${v.mark}`;
+    });
+  return {
+    title: `📚 Backtest – ${bt.seasons.map(label).join(" and ")} so far`,
+    description: [
+      "_Every game replayed using only what Hawk would have known before kick-off._",
+      "",
+      ...leagues,
+      "",
+      "**Is Hawk's 70% really 70%?** _(every market, 50%+ legs)_",
+      ...bands,
+      "",
+      `💰 _Value bet = Hawk rated a result ${Math.round(bt.valueEdge * 100)}+ points above the bookies' average price, staked 1 unit at that price._`,
+      "",
+      bt.edges?.length
+        ? `**🎯 Edges that held up over two full seasons:** ${bt.edges.map((e: any) => `${e.market} when Hawk is ${Math.round(e.edge * 100)}+ pts above the bookies (${pc(e.found.profit, e.found.bets)} then ${pc(e.check.profit, e.check.bets)})`).join(" · ")}`
+        : "**🎯 Edges:** none held up over two full seasons yet – Hawk shows the bookies' prices but doesn't call anything value.",
+    ].join("\n"),
+    color: COLOUR,
+    footer: { text: `Run on ${new Date(bt.generated).toLocaleDateString("en-IE")} · Powered by Hawk 🦅` },
+  };
 }

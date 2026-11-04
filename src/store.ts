@@ -16,6 +16,7 @@ export interface StoredGame {
   pick: StoredLeg;
   builder: { p: number; legs: StoredLeg[] } | null;
   strong: (StoredLeg & { family: string })[]; // 80%+ legs, candidates for the acca
+  gaps?: (StoredLeg & { bookies: number; best: number })[]; // 📊 bookies' price bigger than Hawk's fair price
 }
 export interface StoredDay { code: string; date: string; postedAt: string; games: StoredGame[] }
 export interface StoredAccaLeg extends StoredLeg { code: string; homeId: number; awayId: number; home: string; away: string; kickOff: string; postedAt: string }
@@ -53,6 +54,10 @@ export function toStoredGames(list: { m: Match; p: Predicted }[]): StoredGame[] 
         .filter((l) => l.p >= 0.8 && l.p < 0.95)
         .sort((x, y) => y.p - x.p)
         .map((l) => ({ ...leg(l), family: l.family })),
+      gaps: p.gaps.map((g) => ({
+        label: g.label, p: Math.round(g.hawk * 1000) / 1000, bookies: Math.round(g.bookies * 1000) / 1000, best: g.best,
+        spec: (g.side === "over" ? { t: "tot", op: ">", x: 2.5 } : g.side === "under" ? { t: "tot", op: "<", x: 2.5 } : { t: "res", v: g.side }) as LegSpec,
+      })),
     };
   });
 }

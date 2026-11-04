@@ -2,8 +2,9 @@
 // and the short daily summary for #hawk-reasoning. Everything here is worked out from
 // Hawk's own numbers – nothing is made up.
 
+import type { GameOdds } from "./odds";
 import {
-  COLOUR, getMatches, predictMatch, pickOf, teamName, league, formFor, dots, fitLines,
+  COLOUR, getMatches, predictMatch, pickOf, teamName, league, formFor, dots, fitLines, gapLine,
   type Match, type Predicted,
 } from "./football";
 import { buildRatings, light, pct, fairOdds, type Ratings } from "./model";
@@ -124,7 +125,7 @@ function legReason(label: string, family: string, p: Predicted): string {
 // ---------------------------------------------------------------------------
 // The full explanation for one match (ephemeral reply to 🔍 Why?)
 // ---------------------------------------------------------------------------
-export async function explainMatch(code: string, token: string, postedAt: Date, homeId: number, awayId: number) {
+export async function explainMatch(code: string, token: string, postedAt: Date, homeId: number, awayId: number, history: Match[] = [], oddsGames: GameOdds[] = []) {
   const l = league(code);
   const matches = await getMatches(code, token, postedAt);
   const cutoff = postedAt.toISOString();
@@ -133,8 +134,8 @@ export async function explainMatch(code: string, token: string, postedAt: Date, 
     .sort((x, y) => x.utcDate.localeCompare(y.utcDate))[0];
   if (!m) throw new Error("Couldn't find that game any more – it may have been rescheduled.");
 
-  const ratings = buildRatings(matches, postedAt);
-  const p = predictMatch(ratings, m);
+  const ratings = buildRatings([...history, ...matches], postedAt);
+  const p = predictMatch(ratings, m, oddsGames);
   const pick = pickOf(p);
   const kickOff = new Date(m.utcDate);
   const hs = rawStats(homeId, matches, postedAt), as = rawStats(awayId, matches, postedAt);
@@ -149,9 +150,21 @@ export async function explainMatch(code: string, token: string, postedAt: Date, 
     `🛡️ **${p.awayName} defence:** ${defenceText(ratings, awayId)} – letting in ${as.conceded} a game`,
     `🏠 ${p.homeName} at home: ${hs.home} · ✈️ ${p.awayName} away: ${as.away}`,
     `📈 Form: ${dots(formFor(homeId, matches, kickOff))}  v  ${dots(formFor(awayId, matches, kickOff))}`,
-    `📊 Put together: expected goals **${p.xgHome.toFixed(1)} – ${p.xgAway.toFixed(1)}**, most likely score **${p.likely.h}-${p.likely.a}** (${pct(p.likely.p)})`,
-    `_"Better/worse than average" allows for who each team has played, and recent games count more._`,
+    `🧮 Put together: expected goals **${p.xgHome.toFixed(1)} – ${p.xgAway.toFixed(1)}**, most likely score **${p.likely.h}-${p.likely.a}** (${pct(p.likely.p)})`,
+    `_"Better/worse than average" allows for who each team has played${history.length ? " (this season and last)" : ""}, and recent games count more. Goals per game are from recent games._`,
   ];
+
+  if (p.odds) {
+    const c = p.odds.chance;
+    lines.push(
+      "",
+      "**Hawk v the bookies**",
+      `The bookies make it ${p.homeName} **${pct(c.H)}** · Draw **${pct(c.D)}** · ${p.awayName} **${pct(c.A)}** (margin removed).`,
+      ...(p.gaps.length
+        ? [...p.gaps.map(gapLine), "When they disagree like this, the bookies have usually been right in Hawk's testing – they can see team news Hawk can't. Worth checking before deciding."]
+        : ["Hawk and the bookies broadly agree here."]),
+    );
+  }
 
   if (p.builder) {
     const b = p.builder;
@@ -168,13 +181,13 @@ export async function explainMatch(code: string, token: string, postedAt: Date, 
         const why = legReason(x.label, x.family, p);
         return `• **${x.label}** (${pct(x.p)})${why ? ` – ${why}` : ""}`;
       }),
-      `Together **${pct(b.p)}** – ${linked}. Worth it at **${fairOdds(b.p)}** or bigger.`,
+      `Together **${pct(b.p)}** – ${linked}. Hawk's fair price **${fairOdds(b.p)}**.`,
     );
   }
 
   lines.push(
     "",
-    `⚠️ **What Hawk can't see:** injuries, team news, the referee or bookies' prices. Rated on ${p.dataGames} game${p.dataGames === 1 ? "" : "s"} for the side with the fewest${p.dataGames < 6 ? " – early days, so treat with care" : ""}.`,
+    `⚠️ **What Hawk can't see:** injuries, team news or the referee. Rated on ${p.dataGames} game${p.dataGames === 1 ? "" : "s"} for the side with the fewest${p.dataGames < 6 ? " – early days, so treat with care" : ""}.`,
   );
 
   return {

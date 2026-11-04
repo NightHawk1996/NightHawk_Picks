@@ -2,9 +2,12 @@
 // Discord POSTs every interaction here. We check the signature (so only Discord can
 // talk to Hawk), then reply.
 
-import { leagueDay, tableEmbed, formEmbed, predictEmbed } from "./football";
+import { leagueDay, tableEmbed, formEmbed, predictEmbed, historyCutoff } from "./football";
+import { loadHistory } from "./history";
+import { loadOdds } from "./odds";
+import { whichLeague } from "./teams";
 import { whyMenu, whyButton, parseWhy, explainMatch } from "./reasoning";
-import { runLeaguePost, runAccaPost, runWeekendPost, runChampionsLeaguePost, runSpecialPosts, jobForRun } from "./daily";
+import { runLeaguePost, runAccaPost, runWeekendPost, runChampionsLeaguePost, runSpecialPosts, jobForRun, historyTaskForRun, runHistoryImport } from "./daily";
 import { runResultsPost, hasPending } from "./results";
 import { runModelCheck } from "./modelcheck";
 import { dublinDate } from "./discord";
@@ -16,6 +19,7 @@ export interface Env {
   GUILD_ID: string;
   BET_BUILDERS_CHANNEL_ID?: string;
   HAWK?: KVNamespace;
+  ODDS_API_KEY?: string;
 }
 
 const InteractionType = { PING: 1, APPLICATION_COMMAND: 2, MESSAGE_COMPONENT: 3 } as const;
@@ -64,6 +68,14 @@ function option(interaction: any, name: string): string | undefined {
   return interaction.data.options?.find((o: any) => o.name === name)?.value;
 }
 
+// No league picked? Find the team in any league Hawk covers.
+async function resolveLeague(env: Env, team: string, chosen: string | undefined, mode: "next" | "domestic") {
+  if (chosen) return chosen;
+  const found = await whichLeague(env.HAWK, env.FOOTBALL_DATA_TOKEN, team, mode);
+  if (!found) throw new Error(`Couldn't find "${team}" in any league Hawk covers – check the spelling, or pick the league from the list.`);
+  return found;
+}
+
 // Grades yesterday, and re-grades the day before if any of its games hadn't finished.
 async function runDailyResults(env: Env, when: Date) {
   const yesterday = dublinDate(new Date(when.getTime() - 864e5));
@@ -102,7 +114,8 @@ export default {
           const league = option(interaction, "league") ?? "PL";
           const now = new Date();
           ctx.waitUntil(
-            leagueDay(league, env.FOOTBALL_DATA_TOKEN, now, 168, env.BET_BUILDERS_CHANNEL_ID)
+            loadHistory(env.HAWK, league, historyCutoff(now), now)
+              .then(async (history) => leagueDay(league, env.FOOTBALL_DATA_TOKEN, now, 168, env.BET_BUILDERS_CHANNEL_ID, undefined, history, await loadOdds(env.HAWK, league)))
               .then((day) => finishReply(interaction, { embeds: [day.fixtures], components: whyMenu(league, now, day.predictions, "fx") }))
               .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
           );
@@ -121,9 +134,10 @@ export default {
 
         case "form": {
           const team = option(interaction, "team") ?? "";
-          const league = option(interaction, "league") ?? "PL";
+          const chosen = option(interaction, "league");
           ctx.waitUntil(
-            formEmbed(league, team, env.FOOTBALL_DATA_TOKEN)
+            resolveLeague(env, team, chosen, "domestic")
+              .then((league) => formEmbed(league, team, env.FOOTBALL_DATA_TOKEN))
               .then((embed) => finishReply(interaction, { embeds: [embed] }))
               .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
           );
@@ -132,15 +146,30 @@ export default {
 
         case "predict": {
           const team = option(interaction, "team") ?? "";
-          const league = option(interaction, "league") ?? "PL";
+          const chosen = option(interaction, "league");
           const now = new Date();
           ctx.waitUntil(
-            predictEmbed(league, team, env.FOOTBALL_DATA_TOKEN, now)
-              .then(({ why, ...embed }) =>
-                finishReply(interaction, { embeds: [embed], components: whyButton(league, now, why.homeId, why.awayId) }))
+            resolveLeague(env, team, chosen, "next")
+              .then(async (league) => {
+                const history = await loadHistory(env.HAWK, league, historyCutoff(now), now);
+                const { why, ...embed } = await predictEmbed(league, team, env.FOOTBALL_DATA_TOKEN, now, history, await loadOdds(env.HAWK, league));
+                return finishReply(interaction, { embeds: [embed], components: whyButton(league, now, why.homeId, why.awayId) });
+              })
               .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
           );
           return reply({ type: ResponseType.DEFERRED_MESSAGE });
+        }
+
+        // Admin-only: import history from football-data.co.uk for one league and season.
+        case "history": {
+          const league = option(interaction, "league") ?? "PL";
+          const back = option(interaction, "season") === "last" ? 1 : 0;
+          ctx.waitUntil(
+            runHistoryImport(env, league, back as 0 | 1, new Date(), true)
+              .then((summary) => finishReply(interaction, { content: summary }))
+              .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
+          );
+          return reply({ type: ResponseType.DEFERRED_MESSAGE, data: { flags: EPHEMERAL } });
         }
 
         // Admin-only: run one league's 9am post (or the acca) now, for testing.
@@ -170,7 +199,8 @@ export default {
       const why = parseWhy(interaction.data.custom_id, interaction.data.values);
       if (why) {
         ctx.waitUntil(
-          explainMatch(why.code, env.FOOTBALL_DATA_TOKEN, why.postedAt, why.homeId, why.awayId)
+          loadHistory(env.HAWK, why.code, historyCutoff(why.postedAt), why.postedAt)
+            .then(async (history) => explainMatch(why.code, env.FOOTBALL_DATA_TOKEN, why.postedAt, why.homeId, why.awayId, history, await loadOdds(env.HAWK, why.code)))
             .then((embed) => finishReply(interaction, { embeds: [embed] }))
             .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
         );
@@ -187,6 +217,11 @@ export default {
   // Runs on the schedule in wrangler.toml.
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const when = new Date(controller.scheduledTime);
+    const task = historyTaskForRun(when);
+    if (task) {
+      ctx.waitUntil(runHistoryImport(env, task[0], task[1], when).then(() => {}));
+      return;
+    }
     const job = jobForRun(when);
     if (!job) return;
     const run =

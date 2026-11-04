@@ -3,7 +3,7 @@
 // are void. Graded results are saved so #model-check can test Hawk's percentages.
 
 import { getResults, LEAGUES, COLOUR, type Match } from "./football";
-import { gradeLeg, pct } from "./model";
+import { gradeLeg, pct, toFraction } from "./model";
 import { discord, getChannels, cleanChannel, log, type DiscordEnv } from "./discord";
 import type { StoredDay, StoredAcca, StoredGame } from "./store";
 import { loadPicks, loadAccasSettling } from "./store";
@@ -19,7 +19,7 @@ const MARK: Record<Outcome, string> = { won: "✅", lost: "❌", void: "➖", pe
 const VOID = ["POSTPONED", "CANCELLED", "SUSPENDED", "AWARDED"];
 
 // What #model-check needs later: every graded chance and what happened.
-export interface GradedItem { kind: "pick" | "builder" | "acca" | "leg"; p: number; outcome: Outcome; code?: string }
+export interface GradedItem { kind: "pick" | "builder" | "acca" | "leg" | "gap"; p: number; outcome: Outcome; code?: string; bookies?: number; odds?: number }
 export interface GradedDay { date: string; items: GradedItem[] }
 
 const nextDay = (date: string) => new Date(Date.parse(`${date}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
@@ -76,12 +76,20 @@ export async function gradeDay(env: ResultsEnv, date: string) {
     const l = LEAGUES[day.code];
     const picks: string[] = [];
     const builders: string[] = [];
+    const gaps: string[] = [];
     for (const g of [...day.games].sort((x, y) => x.kickOff.localeCompare(y.kickOff))) {
       const f = finalScore(results[day.code], g);
       const po = legOutcome(f, g.pick.spec);
       items.push({ kind: "pick", p: g.pick.p, outcome: po, code: day.code });
       const note = f.status === "void" ? " – postponed, void" : f.status === "pending" ? " – not finished yet" : "";
       picks.push(`${MARK[po]} ${scoreLine(g, f)} · ${g.pick.label} ${pct(g.pick.p)}${note}`);
+
+      for (const x of g.gaps ?? []) {
+        const o = legOutcome(f, x.spec);
+        items.push({ kind: "gap", p: x.p, outcome: o, code: day.code, bookies: x.bookies, odds: x.best });
+        const units = o === "won" ? `+${(x.best - 1).toFixed(2)}` : o === "lost" ? "−1" : "0";
+        gaps.push(`${MARK[o]} ${scoreLine(g, f)} · ${x.label} – Hawk ${pct(x.p)}, bookies ${pct(x.bookies)}, best price ${toFraction(x.best)} → ${units} ${units === "−1" || units === "+1.00" ? "unit" : "units"}`);
+      }
 
       if (g.builder) {
         const legs = g.builder.legs.map((x) => ({ ...x, o: legOutcome(f, x.spec) }));
@@ -96,7 +104,11 @@ export async function gradeDay(env: ResultsEnv, date: string) {
         );
       }
     }
-    const description = [`**🎯 Picks**`, ...picks, ...(builders.length ? ["", "**🧩 Bet builders**", builders.join("\n\n")] : [])].join("\n");
+    const description = [
+      `**🎯 Picks**`, ...picks,
+      ...(gaps.length ? ["", "**📊 Where the bookies' price was bigger than Hawk's**", ...gaps] : []),
+      ...(builders.length ? ["", "**🧩 Bet builders**", builders.join("\n\n")] : []),
+    ].join("\n");
     embeds.push({ title: `📈 ${l.emoji} ${l.name} – ${dateLabel(date)}`, description: description.slice(0, 4000), color: COLOUR });
   }
 
@@ -131,9 +143,12 @@ export async function gradeDay(env: ResultsEnv, date: string) {
     return { won: settled.filter((i) => i.outcome === "won").length, total: settled.length };
   };
   const picks = count("pick"), strong = count("pick", (i) => i.p >= 0.7), builders = count("builder");
+  const gapItems = items.filter((i) => i.kind === "gap" && (i.outcome === "won" || i.outcome === "lost"));
+  const gapUnits = gapItems.reduce((s, i) => s + (i.outcome === "won" ? (i.odds ?? 1) - 1 : -1), 0);
   const tally = [
     `🎯 Picks **${picks.won}/${picks.total}**` + (strong.total ? ` (✅ 70%+ picks: **${strong.won}/${strong.total}**)` : ""),
     builders.total ? `🧩 Builders **${builders.won}/${builders.total}**` : "",
+    gapItems.length ? `📊 Bigger bookies' prices **${gapItems.filter((i) => i.outcome === "won").length}/${gapItems.length}** (${gapUnits >= 0 ? "+" : "−"}${Math.abs(gapUnits).toFixed(1)} units at best price)` : "",
     accaMarks.length ? `Accas: ${accaMarks.join(" ")}` : "",
   ].filter(Boolean).join(" · ");
   const pending = items.some((i) => i.outcome === "pending") ? "\n⏳ Some games hadn't finished – they'll count once they have." : "";

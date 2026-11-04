@@ -7,7 +7,10 @@
 //   9:10       #results – yesterday's picks and any accas that finished yesterday
 //   9:11       Mondays: #model-check – is Hawk's 70% really 70%?
 
-import { leagueDay, LEAGUES, COLOUR } from "./football";
+import { leagueDay, LEAGUES, COLOUR, historyCutoff } from "./football";
+import { loadHistory, importSeason, seasonLabel, seasonCode, DIVISIONS } from "./history";
+import { fetchOdds, saveOdds, loadOdds, type GameOdds } from "./odds";
+import { saveTeams } from "./teams";
 import { whyMenu, summaryEmbed } from "./reasoning";
 import { discord, getChannels, cleanChannel, dublinDate, log, type DiscordEnv } from "./discord";
 import { toStoredGames, savePicks, loadPicks, saveAcca, saveAhead, loadAhead } from "./store";
@@ -15,6 +18,7 @@ import { buildAcca, buildAroundTheLeagues, candidateLegs, accaEmbed, accaWhyMenu
 
 export interface DailyEnv extends DiscordEnv {
   FOOTBALL_DATA_TOKEN: string;
+  ODDS_API_KEY?: string;
   BET_BUILDERS_CHANNEL_ID?: string;
   HAWK?: KVNamespace;
 }
@@ -60,6 +64,31 @@ export function isNineInDublin(when: Date): boolean {
   return Number(HOUR.format(when)) === 9;
 }
 
+// Overnight history refresh: Tuesdays and Fridays, 03:20–03:31 UTC, one file per minute –
+// this season's six leagues first (that's where team names are matched), then last season's.
+const HISTORY_TASKS = [...Object.keys(DIVISIONS).map((c) => [c, 0] as const), ...Object.keys(DIVISIONS).map((c) => [c, 1] as const)];
+export function historyTaskForRun(when: Date): readonly [string, 0 | 1] | null {
+  if (when.getUTCHours() !== 3 || !["Tue", "Fri"].includes(weekday(when))) return null;
+  return HISTORY_TASKS[when.getUTCMinutes() - 20] ?? null;
+}
+
+export async function runHistoryImport(env: DailyEnv, code: string, back: 0 | 1, now = new Date(), force = false): Promise<string> {
+  const ch = await getChannels(env);
+  let line: string;
+  try {
+    // Last season doesn't change – only fetch it once (or when asked).
+    if (back === 1 && !force && env.HAWK && (await env.HAWK.get(`history:${code}:${seasonCode(now, 1)}`))) return "already have last season";
+    const r = await importSeason(env, code, back, now);
+    line = `✅ ${LEAGUES[code].name} ${seasonLabel(r.season)}: ${r.games} games · ${r.matched}/${r.teams} teams matched`;
+    if (back === 0 && r.unmatched.length) line += ` · ⚠️ not matched: ${r.unmatched.join(", ")}`;
+    if (back === 1 && r.unmatched.length) line += ` · ${r.unmatched.length} not in this season's league (relegated) – skipped`;
+  } catch (err: any) {
+    line = `⚠️ ${LEAGUES[code]?.name ?? code} history – failed: ${err.message}`;
+  }
+  await log(env, ch, `📚 ${line}`);
+  return line;
+}
+
 // What this cron run should do: a league code, "ACCA", or null.
 export function jobForRun(when: Date): string | null {
   if (!isNineInDublin(when)) return null;
@@ -69,6 +98,13 @@ export function jobForRun(when: Date): string | null {
   if (minute === RESULTS_MINUTE) return "RESULTS";
   if (minute === MODEL_CHECK_MINUTE) return weekday(when) === "Mon" ? "MODELCHECK" : null;
   return DAILY_ORDER[minute] ?? null;
+}
+
+// Keep prices for games still to come, replacing any game we have fresher prices for.
+function mergeOdds(old: GameOdds[], fresh: GameOdds[], now: Date): GameOdds[] {
+  const key = (g: GameOdds) => `${g.home}|${g.kickOff}`;
+  const freshKeys = new Set(fresh.map(key));
+  return [...old.filter((g) => Date.parse(g.kickOff) > now.getTime() && !freshKeys.has(key(g))), ...fresh];
 }
 
 const startedToday = (msg: any, today: string) => dublinDate(new Date(msg.timestamp)) === today;
@@ -95,7 +131,25 @@ export async function runLeaguePost(env: DailyEnv, code: string, now = new Date(
     } else if (manual || weekday(now) === "Fri") {
       aheadUntil = endOfWeekend(now);
     }
-    const day = await leagueDay(code, env.FOOTBALL_DATA_TOKEN, now, 24, builderId, aheadUntil);
+    const history = await loadHistory(env.HAWK, code, historyCutoff(now), now);
+
+    // Bookies' prices for today (and the weekend / matchweek when looking ahead). One call per
+    // league per day; a call that finds no games costs nothing. Problems never stop the post.
+    let oddsGames: GameOdds[] = [];
+    let oddsNote = "";
+    if (env.ODDS_API_KEY) {
+      try {
+        const until = new Date(Math.max(now.getTime() + 24 * 3600e3, aheadUntil?.getTime() ?? 0));
+        const r = await fetchOdds(env.ODDS_API_KEY, code, now, until);
+        oddsGames = r.games;
+        if (env.HAWK && r.games.length) await saveOdds(env.HAWK, code, mergeOdds(await loadOdds(env.HAWK, code), r.games, now));
+        if (r.games.length) oddsNote = ` · 📊 ${r.games.length} priced${r.remaining ? ` (${r.remaining} odds credits left)` : ""}`;
+      } catch (err: any) {
+        oddsNote = ` · ⚠️ odds: ${err.message}`;
+      }
+    }
+    const day = await leagueDay(code, env.FOOTBALL_DATA_TOKEN, now, 24, builderId, aheadUntil, history, oddsGames);
+    await saveTeams(env.HAWK, code, day.matches);
 
     // Clean up: everything of Hawk's in the league channel goes, and in #bet-builders
     // anything from before today plus this league's earlier post today (if re-run).
@@ -148,6 +202,7 @@ export async function runLeaguePost(env: DailyEnv, code: string, now = new Date(
       line += " · ⚠️ storage not set up – picks not saved";
     }
     if (cleared) line += ` · 🧹 ${cleared} old`;
+    line += oddsNote;
   } catch (err: any) {
     line = `⚠️ #${channelName} – failed: ${err.message}`;
   }
