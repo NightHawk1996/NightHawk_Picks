@@ -9,6 +9,7 @@ import { whichLeague } from "./teams";
 import { loadTrends, raceChoices, trendsEmbed } from "./trends";
 import { loadSetPieceRatings } from "./setpiece-live";
 import { whyMenu, whyButton, parseWhy, explainMatch } from "./reasoning";
+import { racingTaskForRun, runRacingTask, runRacingNow } from "./racing";
 import { runLeaguePost, runAccaPost, runWeekendPost, runChampionsLeaguePost, runSpecialPosts, jobForRun, historyTaskForRun, runHistoryImport } from "./daily";
 import { runResultsPost, hasPending } from "./results";
 import { runModelCheck } from "./modelcheck";
@@ -22,6 +23,8 @@ export interface Env {
   BET_BUILDERS_CHANNEL_ID?: string;
   HAWK?: KVNamespace;
   ODDS_API_KEY?: string;
+  RACING_USER?: string;
+  RACING_PASS?: string;
 }
 
 const InteractionType = { PING: 1, APPLICATION_COMMAND: 2, MESSAGE_COMPONENT: 3, AUTOCOMPLETE: 4 } as const;
@@ -211,6 +214,7 @@ export default {
             : league === "RESULTS" ? runResultsPost(env, yesterday)
             : league === "MODELCHECK" ? runModelCheck(env, new Date(), false)
             : league === "RESULTS_TODAY" ? runResultsPost(env, today)
+            : league === "RACING" ? runRacingNow(env)
             : runLeaguePost(env, league, new Date(), true);
           ctx.waitUntil(
             job
@@ -245,6 +249,11 @@ export default {
   // Runs on the schedule in wrangler.toml.
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const when = new Date(controller.scheduledTime);
+    const racing = racingTaskForRun(when);
+    if (racing) {
+      ctx.waitUntil(runRacingTask(env, racing, when).then(() => {}));
+      return;
+    }
     const task = historyTaskForRun(when);
     if (task) {
       ctx.waitUntil(runHistoryImport(env, task[0], task[1], when).then(() => {}));
