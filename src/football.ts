@@ -1,6 +1,7 @@
 // Football data from football-data.org (free tier): fixtures, form, tables and predictions.
 
-import { buildRatings, predict, light, pct, fairOdds, toFraction, type Prediction } from "./model";
+import { buildRatings, predict, bestBuilder, light, pct, fairOdds, toFraction, type Prediction } from "./model";
+import { predictSetPieces, refereeOf, type SetPieceRatings, type SetPiecePrediction } from "./setpiece-live";
 import { oddsFor, disagreements, type GameOdds, type Disagreement } from "./odds";
 
 export const LEAGUES: Record<string, { name: string; emoji: string }> = {
@@ -24,6 +25,7 @@ type Result = keyof typeof DOT;
 
 export interface Team { id: number; name: string; shortName?: string; tla?: string }
 export interface Match {
+  referees?: { name: string; type?: string }[];
   utcDate: string;
   status: string;
   homeTeam: Team;
@@ -163,9 +165,9 @@ export function fitLines(blocks: string[], limit = 3900, more = "_…more not sh
 // One pass works out both the league post and the bet builders, so the data is
 // only fetched and processed once.
 // ---------------------------------------------------------------------------
-export type Predicted = Prediction & { homeName: string; awayName: string; odds?: GameOdds; gaps: Disagreement[] };
+export type Predicted = Prediction & { homeName: string; awayName: string; odds?: GameOdds; gaps: Disagreement[]; sp?: SetPiecePrediction };
 
-export async function leagueDay(code: string, token: string, now = new Date(), hours = 168, builderChannelId?: string, aheadUntil?: Date, history: Match[] = [], oddsGames: GameOdds[] = []) {
+export async function leagueDay(code: string, token: string, now = new Date(), hours = 168, builderChannelId?: string, aheadUntil?: Date, history: Match[] = [], oddsGames: GameOdds[] = [], spr?: SetPieceRatings | null) {
   const builderLink = builderChannelId ? `<#${builderChannelId}>` : "#bet-builders";
   const l = league(code);
   const to = new Date(now.getTime() + hours * 3600 * 1000);
@@ -186,7 +188,7 @@ export async function leagueDay(code: string, token: string, now = new Date(), h
       .filter((m) => ["SCHEDULED", "TIMED"].includes(m.status) && new Date(m.utcDate) > now && new Date(m.utcDate) <= aheadUntil)
       .sort((x, y) => x.utcDate.localeCompare(y.utcDate))
       .slice(0, AHEAD_LIMIT);
-    for (const m of soon) ahead.push({ m, p: predictMatch(ratings, m, oddsGames) });
+    for (const m of soon) ahead.push({ m, p: predictMatch(ratings, m, oddsGames, spr) });
   }
 
   const daily = hours <= 24;
@@ -211,7 +213,7 @@ export async function leagueDay(code: string, token: string, now = new Date(), h
     const awayForm = dots(formFor(m.awayTeam.id, matches, kickOff));
     let line = `${time} · **${teamName(m.homeTeam)}** v **${teamName(m.awayTeam)}**\n　${homeForm}  v  ${awayForm}`;
     if (m.status !== "POSTPONED" && predictions.length < PREDICT_LIMIT) {
-      const p = ahead.find((x) => x.m === m)?.p ?? predictMatch(ratings, m, oddsGames);
+      const p = ahead.find((x) => x.m === m)?.p ?? predictMatch(ratings, m, oddsGames, spr);
       predictions.push({ m, p });
       line += "\n" + predictionLine(p);
     }
@@ -250,7 +252,7 @@ function buildersEmbed(l: { name: string; emoji: string }, list: { m: Match; p: 
     title: `🧩 ${l.emoji} ${l.name} – ${daily ? "today's" : "this week's"} bet builders`,
     description: fitLines(blocks, 3800, "_…more builders not shown_"),
     color: COLOUR,
-    footer: { text: "Most likely first · Priced as one bet, not leg by leg · Powered by Hawk 🦅" },
+    footer: { text: `Most likely first · Priced as one bet, not leg by leg${list.some(({ p }) => p.builder!.legs.some((x) => !x.mask)) ? " · 🚩🟨 Corners and cards legs are priced separately from the score, and graded after the Tuesday/Friday data update" : ""} · Powered by Hawk 🦅` },
   };
 }
 
@@ -356,14 +358,33 @@ export async function formEmbed(code: string, query: string, token: string, now 
 // ---------------------------------------------------------------------------
 // Predictions
 // ---------------------------------------------------------------------------
-export const predictMatch = (ratings: ReturnType<typeof buildRatings>, m: Match, oddsGames: GameOdds[] = []): Predicted => {
+export const predictMatch = (ratings: ReturnType<typeof buildRatings>, m: Match, oddsGames: GameOdds[] = [], spr?: SetPieceRatings | null): Predicted => {
   const homeName = teamName(m.homeTeam), awayName = teamName(m.awayTeam);
   const p = predict(ratings, m.homeTeam, m.awayTeam, homeName, awayName);
+  // Corners and cards (where there's history for this league) join the builder
+  const sp = spr ? predictSetPieces(spr, m.homeTeam.id, m.awayTeam.id, homeName, awayName, refereeOf(m)) : undefined;
+  if (sp) p.builder = bestBuilder(p.grid, p.legs, sp.legs);
   const odds = oddsFor(m, oddsGames);
   const over = p.legs.find((l) => l.label === "Over 2.5 goals")!.p;
   const gaps = odds ? disagreements({ H: p.home, D: p.draw, A: p.away, over }, odds, { home: homeName, away: awayName }) : [];
-  return { ...p, homeName, awayName, odds, gaps };
+  return { ...p, homeName, awayName, odds, gaps, sp };
 };
+
+// 🚩🟨 One-paragraph summary of the corners and cards prediction.
+export function setPieceText(p: Predicted): string {
+  const sp = p.sp!;
+  const leg = (label: string) => sp.legs.find((l) => l.label === label);
+  const c = sp.corners, k = sp.cards;
+  const lines = [
+    `🚩 **Corners:** ${(c.home + c.away).toFixed(1)} expected – ${p.homeName} ${c.home.toFixed(1)} · ${p.awayName} ${c.away.toFixed(1)} · over 9.5 **${pct(leg("Corners over 9.5")!.p)}**`,
+    `🟨 **Cards:** ${(k.home + k.away).toFixed(1)} expected – ${p.homeName} ${k.home.toFixed(1)} · ${p.awayName} ${k.away.toFixed(1)} · over 3.5 **${pct(leg("Cards over 3.5")!.p)}** · both carded **${pct(leg("Both teams carded")!.p)}**`,
+  ];
+  if (sp.ref) {
+    const pctX = Math.round((sp.ref.x - 1) * 100);
+    lines.push(`👨‍⚖️ **Referee:** ${sp.ref.name} – ${Math.abs(pctX) < 5 ? "about average" : pctX > 0 ? `strict, ${pctX}% more cards than expected` : `lenient, ${-pctX}% fewer cards than expected`}`);
+  }
+  return lines.join("\n");
+}
 
 // 📊 One line per place the bookies' price is bigger than Hawk's fair price.
 export const gapLine = (g: Disagreement) =>
@@ -389,7 +410,7 @@ function predictionLine(p: Predicted): string {
 }
 
 // /predict – the full card for a team's next match.
-export async function predictEmbed(code: string, query: string, token: string, now = new Date(), history: Match[] = [], oddsGames: GameOdds[] = []) {
+export async function predictEmbed(code: string, query: string, token: string, now = new Date(), history: Match[] = [], oddsGames: GameOdds[] = [], spr?: SetPieceRatings | null) {
   const l = league(code);
   const [{ total }, matches] = await Promise.all([getStandings(code, token), getMatches(code, token, now)]);
   const { match: row, suggestions } = findTeam(query, total.length ? total : teamsFrom(matches));
@@ -403,7 +424,7 @@ export async function predictEmbed(code: string, query: string, token: string, n
     .sort((a, b) => a.utcDate.localeCompare(b.utcDate))[0];
   if (!next) throw new Error(`${teamName(row.team)} have no ${l.name} game in the next ${AHEAD_DAYS} days.`);
 
-  const p = predictMatch(buildRatings([...history, ...matches], now), next, oddsGames);
+  const p = predictMatch(buildRatings([...history, ...matches], now), next, oddsGames, spr);
   const pick = pickOf(p);
   const leg = (label: string) => p.legs.find((x) => x.label === label)!;
   const show = (label: string) => { const x = leg(label); return `${x.label} **${pct(x.p)}** ${light(x.p)}`; };
@@ -438,9 +459,13 @@ export async function predictEmbed(code: string, query: string, token: string, n
       value: [show(`${p.homeName} or draw`), show(`${p.awayName} or draw`), show(`${p.homeName} to score`), show(`${p.awayName} to score`)].join("\n"),
     },
     {
+      name: "🚩 Corners & 🟨 cards",
+      value: p.sp ? setPieceText(p) : code === "CL" ? "Not available for the Champions League yet – there's no history file for it." : "Not available yet – the match history hasn't been imported for this league.",
+    },
+    {
       name: "🧩 Hawk's bet builder",
       value: p.builder
-        ? `${p.builder.legs.map((x) => `• ${x.label} (${pct(x.p)})`).join("\n")}\nTogether: **${pct(p.builder.p)}** – Hawk's fair price **${fairOdds(p.builder.p)}**\n_Priced as one bet, not leg by leg._`
+        ? `${p.builder.legs.map((x) => `• ${x.label} (${pct(x.p)})`).join("\n")}\nTogether: **${pct(p.builder.p)}** – Hawk's fair price **${fairOdds(p.builder.p)}**\n_Priced as one bet, not leg by leg.${p.builder.legs.some((x) => !x.mask) ? " Corners and cards are priced separately from the score." : ""}_`
         : "Nothing strong enough here – no builder lands 40%+ with real legs.",
     },
   ];

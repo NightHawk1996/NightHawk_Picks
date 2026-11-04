@@ -1,4 +1,4 @@
-// #model-check – every Monday: is Hawk's 70% really 70%?
+// #model-check – every Tuesday (once corners and cards from the weekend are in): is Hawk's 70% really 70%?
 // Compares what Hawk said with what happened, for last week and for all time.
 // Only accuracy is measured – without bookies' prices there's no profit figure.
 
@@ -80,8 +80,8 @@ export async function runModelCheck(env: CheckEnv, now = new Date(), addToAllTim
     const channelId = ch.idFor("model-check");
     if (!channelId) throw new Error("#model-check not found");
 
-    // Last week = the 7 days up to yesterday.
-    const dates = Array.from({ length: 7 }, (_, i) => dublinDate(new Date(now.getTime() - (7 - i) * 864e5)));
+    // Last week = Monday to Sunday, finishing two days ago (run on Tuesdays).
+    const dates = Array.from({ length: 7 }, (_, i) => dublinDate(new Date(now.getTime() - (8 - i) * 864e5)));
     const days = await Promise.all(dates.map((d) => env.HAWK!.get<GradedDay>(`results:${d}`, "json")));
     const items = days.flatMap((d) => d?.items ?? []);
     const week = summarise(items);

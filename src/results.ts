@@ -8,6 +8,7 @@ import { discord, getChannels, cleanChannel, log, type DiscordEnv } from "./disc
 import type { StoredDay, StoredAcca, StoredGame } from "./store";
 import { loadPicks, loadAccasSettling } from "./store";
 import { ACCA_NAMES } from "./acca";
+import { matchStats, gradeWithStats } from "./setpiece-live";
 
 export interface ResultsEnv extends DiscordEnv {
   FOOTBALL_DATA_TOKEN: string;
@@ -40,8 +41,16 @@ function finalScore(results: Match[], g: { homeId: number; awayId: number; kickO
   return { status: "done", h: s.home, a: s.away };
 }
 
-const legOutcome = (f: Final, spec: any): Outcome =>
-  f.status === "void" ? "void" : f.status === "pending" ? "pending" : gradeLeg(spec, f.h, f.a) ? "won" : "lost";
+type Stats = { hc: number; ac: number; hk: number; ak: number } | null;
+const isSetPiece = (spec: any) => spec?.t === "corners" || spec?.t === "cards";
+
+// Corners and cards legs need the match stats, which arrive with the Tuesday/Friday history
+// update – until then they're ⏳ and the builder waits.
+const legOutcome = (f: Final, spec: any, stats: Stats = null): Outcome =>
+  f.status === "void" ? "void"
+  : f.status === "pending" ? "pending"
+  : isSetPiece(spec) ? (stats ? (gradeWithStats(spec, stats) ? "won" : "lost") : "pending")
+  : gradeLeg(spec, f.h, f.a) ? "won" : "lost";
 
 const scoreLine = (g: { home: string; away: string }, f: Final) =>
   f.status === "done" ? `**${g.home} ${f.h}-${f.a} ${g.away}**` : `**${g.home} v ${g.away}**`;
@@ -92,14 +101,17 @@ export async function gradeDay(env: ResultsEnv, date: string) {
       }
 
       if (g.builder) {
-        const legs = g.builder.legs.map((x) => ({ ...x, o: legOutcome(f, x.spec) }));
+        const needsStats = g.builder.legs.some((x) => isSetPiece(x.spec)) && f.status === "done";
+        const stats = needsStats ? await matchStats(env.HAWK, day.code, g.kickOff, g.homeId, g.awayId) : null;
+        const legs = g.builder.legs.map((x) => ({ ...x, o: legOutcome(f, x.spec, stats) }));
         for (const x of legs) items.push({ kind: "leg", p: x.p, outcome: x.o, code: day.code });
         const bo = combine(legs.map((x) => x.o));
         items.push({ kind: "builder", p: g.builder.p, outcome: bo, code: day.code });
         const byOne = bo === "lost" && legs.filter((x) => x.o === "lost").length === 1;
         const word = bo === "won" ? "landed" : byOne ? "lost by one leg" : bo;
+        const extra = stats ? ` · 🚩 ${stats.hc + stats.ac} corners · 🟨 ${stats.hk + stats.ak} cards` : needsStats ? " · ⏳ corners/cards data due Tue/Fri" : "";
         builders.push(
-          `${scoreLine(g, f)} → ${MARK[bo]} **${word}** (${pct(g.builder.p)})\n` +
+          `${scoreLine(g, f)}${extra} → ${MARK[bo]} **${word}** (${pct(g.builder.p)})\n` +
           legs.map((x) => `${MARK[x.o]} ${x.label}`).join("\n"),
         );
       }
@@ -151,7 +163,7 @@ export async function gradeDay(env: ResultsEnv, date: string) {
     gapItems.length ? `📊 Bigger bookies' prices **${gapItems.filter((i) => i.outcome === "won").length}/${gapItems.length}** (${gapUnits >= 0 ? "+" : "−"}${Math.abs(gapUnits).toFixed(1)} units at best price)` : "",
     accaMarks.length ? `Accas: ${accaMarks.join(" ")}` : "",
   ].filter(Boolean).join(" · ");
-  const pending = items.some((i) => i.outcome === "pending") ? "\n⏳ Some games hadn't finished – they'll count once they have." : "";
+  const pending = items.some((i) => i.outcome === "pending") ? "\n⏳ Still waiting on some results – corners and cards arrive with the Tuesday/Friday data update. This post updates when they do." : "";
   if (embeds.length) {
     embeds.push({
       title: `📊 ${dateLabel(date)} – how Hawk did`,

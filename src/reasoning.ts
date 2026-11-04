@@ -3,8 +3,9 @@
 // Hawk's own numbers – nothing is made up.
 
 import type { GameOdds } from "./odds";
+import type { SetPieceRatings } from "./setpiece-live";
 import {
-  COLOUR, getMatches, predictMatch, pickOf, teamName, league, formFor, dots, fitLines, gapLine,
+  COLOUR, getMatches, predictMatch, pickOf, teamName, league, formFor, dots, fitLines, gapLine, setPieceText,
   type Match, type Predicted,
 } from "./football";
 import { buildRatings, light, pct, fairOdds, type Ratings } from "./model";
@@ -106,6 +107,15 @@ function legReason(label: string, family: string, p: Predicted): string {
     if (label.endsWith(" win")) return "Hawk's favourite result";
     return "";
   }
+  if (family.includes("corners") || family.includes("card")) {
+    const sp = p.sp;
+    if (!sp) return "";
+    if (family === "both-carded") return `${p.homeName} expected ${sp.cards.home.toFixed(1)} cards, ${p.awayName} ${sp.cards.away.toFixed(1)}`;
+    if (family === "cards") return `Hawk expects ${(sp.cards.home + sp.cards.away).toFixed(1)} cards${sp.ref ? ` with ${sp.ref.name} refereeing` : ""}`;
+    if (family === "home-corners") return `${p.homeName} expected ${sp.corners.home.toFixed(1)} corners`;
+    if (family === "away-corners") return `${p.awayName} expected ${sp.corners.away.toFixed(1)} corners`;
+    return `Hawk expects ${(sp.corners.home + sp.corners.away).toFixed(1)} corners`;
+  }
   if (family === "goals") return label.startsWith("Over") ? `Hawk expects ${total} goals in total` : `Hawk expects only ${total} goals in total`;
   if (family === "btts") {
     return label.endsWith("No")
@@ -125,7 +135,7 @@ function legReason(label: string, family: string, p: Predicted): string {
 // ---------------------------------------------------------------------------
 // The full explanation for one match (ephemeral reply to 🔍 Why?)
 // ---------------------------------------------------------------------------
-export async function explainMatch(code: string, token: string, postedAt: Date, homeId: number, awayId: number, history: Match[] = [], oddsGames: GameOdds[] = []) {
+export async function explainMatch(code: string, token: string, postedAt: Date, homeId: number, awayId: number, history: Match[] = [], oddsGames: GameOdds[] = [], spr?: SetPieceRatings | null) {
   const l = league(code);
   const matches = await getMatches(code, token, postedAt);
   const cutoff = postedAt.toISOString();
@@ -135,7 +145,7 @@ export async function explainMatch(code: string, token: string, postedAt: Date, 
   if (!m) throw new Error("Couldn't find that game any more – it may have been rescheduled.");
 
   const ratings = buildRatings([...history, ...matches], postedAt);
-  const p = predictMatch(ratings, m, oddsGames);
+  const p = predictMatch(ratings, m, oddsGames, spr);
   const pick = pickOf(p);
   const kickOff = new Date(m.utcDate);
   const hs = rawStats(homeId, matches, postedAt), as = rawStats(awayId, matches, postedAt);
@@ -154,6 +164,8 @@ export async function explainMatch(code: string, token: string, postedAt: Date, 
     `_"Better/worse than average" allows for who each team has played${history.length ? " (this season and last)" : ""}, and recent games count more. Goals per game are from recent games._`,
   ];
 
+  if (p.sp) lines.push("", "**Corners and cards**", setPieceText(p), "_From each side's corners and cards this season and last, allowing for opponents and venue._");
+
   if (p.odds) {
     const c = p.odds.chance;
     lines.push(
@@ -169,6 +181,7 @@ export async function explainMatch(code: string, token: string, postedAt: Date, 
   if (p.builder) {
     const b = p.builder;
     const multiplied = b.legs.reduce((s, x) => s * x.p, 1);
+    const separate = b.legs.some((x) => !x.mask);
     const linked = b.p - multiplied > 0.01
       ? `the legs help each other, so it's more likely than multiplying them (${pct(multiplied)}) suggests`
       : b.p - multiplied < -0.01
@@ -181,7 +194,7 @@ export async function explainMatch(code: string, token: string, postedAt: Date, 
         const why = legReason(x.label, x.family, p);
         return `• **${x.label}** (${pct(x.p)})${why ? ` – ${why}` : ""}`;
       }),
-      `Together **${pct(b.p)}** – ${linked}. Hawk's fair price **${fairOdds(b.p)}**.`,
+      `Together **${pct(b.p)}** – ${separate && b.legs.filter((x) => x.mask).length < 2 ? "corners and cards are priced separately from the score" : linked}. Hawk's fair price **${fairOdds(b.p)}**.`,
     );
   }
 

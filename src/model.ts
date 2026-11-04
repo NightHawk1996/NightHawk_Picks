@@ -125,7 +125,7 @@ export const chance = (grid: number[][], ...tests: Test[]) => {
   return p;
 };
 
-export interface Leg { label: string; family: string; spec: LegSpec; test: Test; p: number; mask: Uint8Array }
+export interface Leg { label: string; family: string; spec: LegSpec; test?: Test; p: number; mask?: Uint8Array }
 
 // Every leg is stored as a small rule that can be checked against the final score later,
 // e.g. "Over 2.5 goals" = { t: "tot", op: ">", x: 2.5 }. This is what #results grades.
@@ -133,10 +133,15 @@ export type LegSpec =
   | { t: "res"; v: "H" | "D" | "A" | "HD" | "AD" }
   | { t: "tot"; op: ">" | "<"; x: number }
   | { t: "btts"; yes: boolean }
-  | { t: "team"; side: "h" | "a"; min?: number; zero?: boolean };
+  | { t: "team"; side: "h" | "a"; min?: number; zero?: boolean }
+  | { t: "corners" | "cards"; side: "total" | "h" | "a"; op: ">" | "<"; x: number };
 
+// Goals-based legs only – corners and cards are graded from the match stats (see results).
 export function gradeLeg(spec: LegSpec, h: number, a: number): boolean {
   switch (spec.t) {
+    case "corners":
+    case "cards":
+      throw new Error("corners/cards legs need match stats");
     case "res":
       return { H: h > a, D: h === a, A: a > h, HD: h >= a, AD: a >= h }[spec.v];
     case "tot":
@@ -196,23 +201,34 @@ export function allLegs(grid: number[][], home: string, away: string): Leg[] {
 
 export interface Builder { legs: Leg[]; p: number }
 
+// Builder families: all corners legs count as one family, all cards legs as another, so a
+// builder never stacks two corners or two cards bets (they'd be closely linked).
+const group = (family: string) => (family.includes("corners") ? "corners" : family.includes("card") ? "cards" : family);
+
 // Hawk's bet builder: the most likely 3-leg combo (or 2 if no 3 works), where
 // - it's built around the match result (a win or double chance), like a real builder
 // - every leg is a genuine pick (55–90% on its own – near-certainties add nothing)
 // - no leg is already implied by the others (each must add real risk)
 // - the whole thing lands at least 40% of the time.
-export function bestBuilder(grid: number[][], legs: Leg[]): Builder | null {
-  const pool = legs.filter((l) => l.p >= 0.55 && l.p < 0.9);
+// Goals legs are priced together from the scoreline grid. Corners and cards legs (`extra`)
+// come from their own models and are treated as separate from the score.
+export function bestBuilder(grid: number[][], legs: Leg[], extra: Leg[] = []): Builder | null {
+  const pool = [...legs, ...extra].filter((l) => l.p >= 0.55 && l.p < 0.9);
   const flat = cells(grid);
+  const joint = (combo: Leg[]) => {
+    const scored = combo.filter((l) => l.mask);
+    const base = scored.length ? jointChance(flat, scored.map((l) => l.mask!)) : 1;
+    return combo.filter((l) => !l.mask).reduce((s, l) => s * l.p, base);
+  };
   let best: Builder | null = null;
 
   const consider = (combo: Leg[]) => {
-    if (new Set(combo.map((l) => l.family)).size !== combo.length) return;
+    if (new Set(combo.map((l) => group(l.family))).size !== combo.length) return;
     if (!combo.some((l) => l.family === "result")) return;
-    const p = jointChance(flat, combo.map((l) => l.mask));
+    const p = joint(combo);
     if (p < 0.4) return;
     for (let i = 0; i < combo.length; i++) {
-      const without = jointChance(flat, combo.filter((_, j) => j !== i).map((l) => l.mask));
+      const without = joint(combo.filter((_, j) => j !== i));
       if (without - p < 0.04) return; // this leg barely changes anything – it's implied
     }
     const better = !best || combo.length > best.legs.length || (combo.length === best.legs.length && p > best.p);

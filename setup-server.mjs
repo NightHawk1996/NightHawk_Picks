@@ -134,6 +134,8 @@ Premier League · Championship · La Liga · Serie A · Bundesliga · Ligue 1 ·
 
 **5️⃣ Every market from one grid** – win, draw, goals, both teams to score and builders all come from the same scoreline chances, so they always agree with each other.
 
+**6️⃣ Corners and cards** – each side gets corners and cards ratings the same way, from this season and last. Corners and cards vary a lot from game to game, and Hawk allows for that. Cards also allow for how strict the referee is, where the referee is known. _(Not for the Champions League – there's no history for it yet.)_
+
 **Hawk's numbers are its own.** Bookies' prices are shown next to them for comparison but never mixed in – so you always know what Hawk thinks.
 
 **What Hawk can't see (yet):** injuries, team news, the referee or the weather. When something big changes – a star striker out – use your own judgement.`,
@@ -147,7 +149,7 @@ Premier League · Championship · La Liga · Serie A · Bundesliga · Ligue 1 ·
 **🗓️ 9:09 Fridays** – the weekend acca and Around the Leagues in {#hawk-weekend-accas}
 **🇪🇺 9:09 Champions League days** – the matchweek acca and tonight's acca in {#hawk-cl-accas}
 **📈 9:10** – yesterday's picks graded in {#results}
-**🧪 9:11 Mondays** – the weekly accuracy check in {#model-check}
+**🧪 9:18 Tuesdays** – the weekly accuracy check in {#model-check} _(Tuesday, so the weekend's corners and cards are in)_
 
 League channels, builders and accas are cleared each morning so only the current picks are up. The full record lives in {#results} and {#model-check}.`,
   },
@@ -172,11 +174,12 @@ Hawk's chance for each result, the bookies' chance in brackets (their margin tak
     description: `One builder per game, posted in {#bet-builders}, most likely first.
 
 • Always built around the result – a win or a double chance
+• Can include one corners leg and one cards leg
 • Every leg is a real pick on its own (55–90%) – no filler
 • No leg that's already implied by another
 • The whole builder lands at least 40% of the time
 
-**Priced as one bet, not leg by leg.** Legs from the same game are linked – a win and over 1.5 goals tend to go together – so Hawk works out the real chance of them all landing, the same way bookies price builders.`,
+**Priced as one bet, not leg by leg.** Legs from the same game are linked – a win and over 1.5 goals tend to go together – so Hawk works out the real chance of them all landing, the same way bookies price builders. Corners and cards come from their own model and are priced separately from the score.`,
   },
   {
     title: "🎟️ Accas",
@@ -198,8 +201,9 @@ Hawk's chance for each result, the bookies' chance in brackets (their margin tak
 • Settled on the **90-minute score**, like the bookies
 • Postponed games are ➖ **void** and drop out of builders and accas
 • Games not finished in time show ⏳ and are re-checked the next morning
+• 🚩🟨 Corners and cards legs are graded once the stats arrive with the Tuesday/Friday data update – the post updates itself then
 
-**{#model-check}** – every Monday: when Hawk says 70%, does it land about 70% of the time? Each band is marked ✅ on target, ⚠️ too confident or 🔼 too cautious. It takes a few weeks of results before these numbers mean much.
+**{#model-check}** – every Tuesday: when Hawk says 70%, does it land about 70% of the time? Each band is marked ✅ on target, ⚠️ too confident or 🔼 too cautious. It takes a few weeks of results before these numbers mean much.
 
 **{#hawk-reasoning}** – a running history of why Hawk made each day's picks.`,
   },

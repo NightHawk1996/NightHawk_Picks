@@ -5,12 +5,14 @@
 //   9:09       Fridays: weekend acca + Around the Leagues in #hawk-weekend-accas
 //              Champions League days: matchweek acca (first night) + tonight's acca in #hawk-cl-accas
 //   9:10       #results – yesterday's picks and any accas that finished yesterday
-//   9:11       Mondays: #model-check – is Hawk's 70% really 70%?
+//   9:12–9:17  Tue & Fri: re-grade days still waiting on corners and cards (2–7 days ago)
+//   9:18       Tuesdays: #model-check – is Hawk's 70% really 70%?
 
 import { leagueDay, LEAGUES, COLOUR, historyCutoff } from "./football";
 import { loadHistory, importSeason, seasonLabel, seasonCode, DIVISIONS } from "./history";
 import { fetchOdds, saveOdds, loadOdds, type GameOdds } from "./odds";
 import { saveTeams } from "./teams";
+import { loadSetPieceRatings } from "./setpiece-live";
 import { whyMenu, summaryEmbed } from "./reasoning";
 import { discord, getChannels, cleanChannel, dublinDate, log, type DiscordEnv } from "./discord";
 import { toStoredGames, savePicks, loadPicks, saveAcca, saveAhead, loadAhead } from "./store";
@@ -37,7 +39,8 @@ export const DAILY_ORDER = Object.keys(LEAGUE_CHANNELS);
 const ACCA_MINUTE = 8;
 const SPECIAL_MINUTE = 9;
 const RESULTS_MINUTE = 10;
-const MODEL_CHECK_MINUTE = 11; // Mondays only
+const REGRADE_MINUTES = [12, 13, 14, 15, 16, 17]; // Tue & Fri – after the history refresh
+const MODEL_CHECK_MINUTE = 18; // Tuesdays only – after the re-grades
 
 const WEEKDAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "Europe/Dublin" });
 export const weekday = (d: Date) => WEEKDAY.format(d); // "Mon", "Tue", …
@@ -96,7 +99,8 @@ export function jobForRun(when: Date): string | null {
   if (minute === ACCA_MINUTE) return "ACCA";
   if (minute === SPECIAL_MINUTE) return "SPECIAL";
   if (minute === RESULTS_MINUTE) return "RESULTS";
-  if (minute === MODEL_CHECK_MINUTE) return weekday(when) === "Mon" ? "MODELCHECK" : null;
+  if (REGRADE_MINUTES.includes(minute)) return ["Tue", "Fri"].includes(weekday(when)) ? `REGRADE:${minute - 10}` : null;
+  if (minute === MODEL_CHECK_MINUTE) return weekday(when) === "Tue" ? "MODELCHECK" : null;
   return DAILY_ORDER[minute] ?? null;
 }
 
@@ -148,7 +152,12 @@ export async function runLeaguePost(env: DailyEnv, code: string, now = new Date(
         oddsNote = ` · ⚠️ odds: ${err.message}`;
       }
     }
-    const day = await leagueDay(code, env.FOOTBALL_DATA_TOKEN, now, 24, builderId, aheadUntil, history, oddsGames);
+    const spr = await loadSetPieceRatings(env.HAWK, code, now);
+    const day = await leagueDay(code, env.FOOTBALL_DATA_TOKEN, now, 24, builderId, aheadUntil, history, oddsGames, spr);
+    if (spr && day.predictions.length) {
+      const named = day.predictions.filter((x) => x.m.referees?.length).length;
+      oddsNote += ` · 🚩 corners & cards · 👨‍⚖️ ${named}/${day.predictions.length} referees named`;
+    }
     await saveTeams(env.HAWK, code, day.matches);
 
     // Clean up: everything of Hawk's in the league channel goes, and in #bet-builders

@@ -6,6 +6,7 @@ import { leagueDay, tableEmbed, formEmbed, predictEmbed, historyCutoff } from ".
 import { loadHistory } from "./history";
 import { loadOdds } from "./odds";
 import { whichLeague } from "./teams";
+import { loadSetPieceRatings } from "./setpiece-live";
 import { whyMenu, whyButton, parseWhy, explainMatch } from "./reasoning";
 import { runLeaguePost, runAccaPost, runWeekendPost, runChampionsLeaguePost, runSpecialPosts, jobForRun, historyTaskForRun, runHistoryImport } from "./daily";
 import { runResultsPost, hasPending } from "./results";
@@ -76,6 +77,12 @@ async function resolveLeague(env: Env, team: string, chosen: string | undefined,
   return found;
 }
 
+// Re-grade a day that was still waiting on corners and cards (or late results).
+async function regrade(env: Env, when: Date, daysBack: number) {
+  const date = dublinDate(new Date(when.getTime() - daysBack * 864e5));
+  return (await hasPending(env, date)) ? runResultsPost(env, date) : "nothing to re-grade";
+}
+
 // Grades yesterday, and re-grades the day before if any of its games hadn't finished.
 async function runDailyResults(env: Env, when: Date) {
   const yesterday = dublinDate(new Date(when.getTime() - 864e5));
@@ -115,7 +122,7 @@ export default {
           const now = new Date();
           ctx.waitUntil(
             loadHistory(env.HAWK, league, historyCutoff(now), now)
-              .then(async (history) => leagueDay(league, env.FOOTBALL_DATA_TOKEN, now, 168, env.BET_BUILDERS_CHANNEL_ID, undefined, history, await loadOdds(env.HAWK, league)))
+              .then(async (history) => leagueDay(league, env.FOOTBALL_DATA_TOKEN, now, 168, env.BET_BUILDERS_CHANNEL_ID, undefined, history, await loadOdds(env.HAWK, league), await loadSetPieceRatings(env.HAWK, league, now)))
               .then((day) => finishReply(interaction, { embeds: [day.fixtures], components: whyMenu(league, now, day.predictions, "fx") }))
               .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
           );
@@ -152,7 +159,7 @@ export default {
             resolveLeague(env, team, chosen, "next")
               .then(async (league) => {
                 const history = await loadHistory(env.HAWK, league, historyCutoff(now), now);
-                const { why, ...embed } = await predictEmbed(league, team, env.FOOTBALL_DATA_TOKEN, now, history, await loadOdds(env.HAWK, league));
+                const { why, ...embed } = await predictEmbed(league, team, env.FOOTBALL_DATA_TOKEN, now, history, await loadOdds(env.HAWK, league), await loadSetPieceRatings(env.HAWK, league, now));
                 return finishReply(interaction, { embeds: [embed], components: whyButton(league, now, why.homeId, why.awayId) });
               })
               .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
@@ -200,7 +207,7 @@ export default {
       if (why) {
         ctx.waitUntil(
           loadHistory(env.HAWK, why.code, historyCutoff(why.postedAt), why.postedAt)
-            .then(async (history) => explainMatch(why.code, env.FOOTBALL_DATA_TOKEN, why.postedAt, why.homeId, why.awayId, history, await loadOdds(env.HAWK, why.code)))
+            .then(async (history) => explainMatch(why.code, env.FOOTBALL_DATA_TOKEN, why.postedAt, why.homeId, why.awayId, history, await loadOdds(env.HAWK, why.code), await loadSetPieceRatings(env.HAWK, why.code, why.postedAt)))
             .then((embed) => finishReply(interaction, { embeds: [embed] }))
             .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
         );
@@ -228,6 +235,7 @@ export default {
       job === "ACCA" ? runAccaPost(env, when)
       : job === "SPECIAL" ? runSpecialPosts(env, when)
       : job === "MODELCHECK" ? runModelCheck(env, when)
+      : job.startsWith("REGRADE:") ? regrade(env, when, Number(job.split(":")[1]))
       : job === "RESULTS" ? runDailyResults(env, when)
       : runLeaguePost(env, job, when);
     ctx.waitUntil(run.then(() => {}));
