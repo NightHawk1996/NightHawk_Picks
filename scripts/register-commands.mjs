@@ -56,6 +56,14 @@ const commands = [
     ],
   },
   {
+    name: "trends",
+    description: "Cheltenham Festival and Grand National winner trends",
+    options: [
+      { name: "race", description: "Start typing a race, e.g. Gold Cup", type: 3, required: true, autocomplete: true },
+      { name: "years", description: "How many years back (default 10)", type: 4, required: false, choices: [{ name: "Last 5", value: 5 }, { name: "Last 10", value: 10 }, { name: "Last 15", value: 15 }] },
+    ],
+  },
+  {
     name: "history",
     description: "Import match history from football-data.co.uk (admin only)",
     default_member_permissions: "0",

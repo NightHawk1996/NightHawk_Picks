@@ -6,6 +6,7 @@ import { leagueDay, tableEmbed, formEmbed, predictEmbed, historyCutoff } from ".
 import { loadHistory } from "./history";
 import { loadOdds } from "./odds";
 import { whichLeague } from "./teams";
+import { loadTrends, raceChoices, trendsEmbed } from "./trends";
 import { loadSetPieceRatings } from "./setpiece-live";
 import { whyMenu, whyButton, parseWhy, explainMatch } from "./reasoning";
 import { runLeaguePost, runAccaPost, runWeekendPost, runChampionsLeaguePost, runSpecialPosts, jobForRun, historyTaskForRun, runHistoryImport } from "./daily";
@@ -23,7 +24,7 @@ export interface Env {
   ODDS_API_KEY?: string;
 }
 
-const InteractionType = { PING: 1, APPLICATION_COMMAND: 2, MESSAGE_COMPONENT: 3 } as const;
+const InteractionType = { PING: 1, APPLICATION_COMMAND: 2, MESSAGE_COMPONENT: 3, AUTOCOMPLETE: 4 } as const;
 const ResponseType = { PONG: 1, CHANNEL_MESSAGE: 4, DEFERRED_MESSAGE: 5 } as const;
 const EPHEMERAL = 64; // reply only the person who ran the command can see
 
@@ -109,8 +110,28 @@ export default {
       return reply({ type: ResponseType.PONG });
     }
 
+    // Suggestions while typing (the race list for /trends)
+    if (interaction.type === InteractionType.AUTOCOMPLETE) {
+      const typed = interaction.data.options?.find((o: any) => o.focused)?.value ?? "";
+      return reply({ type: 8, data: { choices: raceChoices(await loadTrends(env.HAWK), String(typed)) } });
+    }
+
     if (interaction.type === InteractionType.APPLICATION_COMMAND) {
       switch (interaction.data.name) {
+        case "trends": {
+          const race = option(interaction, "race") ?? "";
+          const years = Number(option(interaction, "years") ?? 10);
+          ctx.waitUntil(
+            loadTrends(env.HAWK)
+              .then((t) => {
+                if (!t) throw new Error("Festival trends haven't been loaded yet – run scripts/festival-trends.mjs and upload the file.");
+                return finishReply(interaction, { embeds: [trendsEmbed(t, race, years)] });
+              })
+              .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
+          );
+          return reply({ type: ResponseType.DEFERRED_MESSAGE });
+        }
+
         case "ping":
           return reply({
             type: ResponseType.CHANNEL_MESSAGE,
