@@ -4,7 +4,7 @@
 
 import { leagueDay, tableEmbed, formEmbed, predictEmbed } from "./football";
 import { whyMenu, whyButton, parseWhy, explainMatch } from "./reasoning";
-import { runLeaguePost, leagueForRun } from "./daily";
+import { runLeaguePost, runAccaPost, jobForRun } from "./daily";
 
 export interface Env {
   DISCORD_PUBLIC_KEY: string;
@@ -12,6 +12,7 @@ export interface Env {
   DISCORD_TOKEN: string;
   GUILD_ID: string;
   BET_BUILDERS_CHANNEL_ID?: string;
+  HAWK?: KVNamespace;
 }
 
 const InteractionType = { PING: 1, APPLICATION_COMMAND: 2, MESSAGE_COMPONENT: 3 } as const;
@@ -131,11 +132,11 @@ export default {
           return reply({ type: ResponseType.DEFERRED_MESSAGE });
         }
 
-        // Admin-only: run one league's 9am post now, for testing.
+        // Admin-only: run one league's 9am post (or the acca) now, for testing.
         case "daily-post": {
           const league = option(interaction, "league") ?? "PL";
           ctx.waitUntil(
-            runLeaguePost(env, league)
+            (league === "ACCA" ? runAccaPost(env) : runLeaguePost(env, league))
               .then((summary) => finishReply(interaction, { content: summary }))
               .catch((err) => finishReply(interaction, { content: `⚠️ Daily post failed: ${err.message}` })),
           );
@@ -166,8 +167,8 @@ export default {
   // Runs on the schedule in wrangler.toml.
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const when = new Date(controller.scheduledTime);
-    const league = leagueForRun(when);
-    if (!league) return;
-    ctx.waitUntil(runLeaguePost(env, league, when).then(() => {}));
+    const job = jobForRun(when);
+    if (!job) return;
+    ctx.waitUntil((job === "ACCA" ? runAccaPost(env, when) : runLeaguePost(env, job, when)).then(() => {}));
   },
 };

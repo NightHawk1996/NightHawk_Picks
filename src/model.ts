@@ -125,7 +125,30 @@ export const chance = (grid: number[][], ...tests: Test[]) => {
   return p;
 };
 
-export interface Leg { label: string; family: string; test: Test; p: number; mask: Uint8Array }
+export interface Leg { label: string; family: string; spec: LegSpec; test: Test; p: number; mask: Uint8Array }
+
+// Every leg is stored as a small rule that can be checked against the final score later,
+// e.g. "Over 2.5 goals" = { t: "tot", op: ">", x: 2.5 }. This is what #results grades.
+export type LegSpec =
+  | { t: "res"; v: "H" | "D" | "A" | "HD" | "AD" }
+  | { t: "tot"; op: ">" | "<"; x: number }
+  | { t: "btts"; yes: boolean }
+  | { t: "team"; side: "h" | "a"; min?: number; zero?: boolean };
+
+export function gradeLeg(spec: LegSpec, h: number, a: number): boolean {
+  switch (spec.t) {
+    case "res":
+      return { H: h > a, D: h === a, A: a > h, HD: h >= a, AD: a >= h }[spec.v];
+    case "tot":
+      return spec.op === ">" ? h + a > spec.x : h + a < spec.x;
+    case "btts":
+      return spec.yes ? h > 0 && a > 0 : h === 0 || a === 0;
+    case "team": {
+      const goals = spec.side === "h" ? h : a;
+      return spec.zero ? goals === 0 : goals >= (spec.min ?? 1);
+    }
+  }
+}
 
 // Which scorelines each leg wins on, worked out once so builders are quick to price.
 const cells = (grid: number[][]) => grid.flat();
@@ -146,27 +169,28 @@ function jointChance(flat: number[], masks: Uint8Array[]): number {
 
 // Every leg Hawk can price from the scoreline grid. One leg per family in a builder.
 export function allLegs(grid: number[][], home: string, away: string): Leg[] {
-  const legs: Omit<Leg, "p">[] = [
-    { label: `${home} win`, family: "result", test: (h, a) => h > a },
-    { label: `${away} win`, family: "result", test: (h, a) => a > h },
-    { label: "Draw", family: "result", test: (h, a) => h === a },
-    { label: `${home} or draw`, family: "result", test: (h, a) => h >= a },
-    { label: `${away} or draw`, family: "result", test: (h, a) => a >= h },
-    ...[1.5, 2.5, 3.5].map((x) => ({ label: `Over ${x} goals`, family: "goals", test: (h: number, a: number) => h + a > x })),
-    ...[1.5, 2.5, 3.5].map((x) => ({ label: `Under ${x} goals`, family: "goals", test: (h: number, a: number) => h + a < x })),
-    { label: "Both teams to score", family: "btts", test: (h, a) => h > 0 && a > 0 },
-    { label: "Both teams to score – No", family: "btts", test: (h, a) => h === 0 || a === 0 },
-    { label: `${home} to score`, family: "home-goals", test: (h) => h > 0 },
-    { label: `${home} 2+ goals`, family: "home-goals", test: (h) => h >= 2 },
-    { label: `${away} clean sheet`, family: "home-goals", test: (h) => h === 0 },
-    { label: `${away} to score`, family: "away-goals", test: (_h, a) => a > 0 },
-    { label: `${away} 2+ goals`, family: "away-goals", test: (_h, a) => a >= 2 },
-    { label: `${home} clean sheet`, family: "away-goals", test: (_h, a) => a === 0 },
+  const defs: { label: string; family: string; spec: LegSpec }[] = [
+    { label: `${home} win`, family: "result", spec: { t: "res", v: "H" } },
+    { label: `${away} win`, family: "result", spec: { t: "res", v: "A" } },
+    { label: "Draw", family: "result", spec: { t: "res", v: "D" } },
+    { label: `${home} or draw`, family: "result", spec: { t: "res", v: "HD" } },
+    { label: `${away} or draw`, family: "result", spec: { t: "res", v: "AD" } },
+    ...[1.5, 2.5, 3.5].map((x) => ({ label: `Over ${x} goals`, family: "goals", spec: { t: "tot", op: ">", x } as LegSpec })),
+    ...[1.5, 2.5, 3.5].map((x) => ({ label: `Under ${x} goals`, family: "goals", spec: { t: "tot", op: "<", x } as LegSpec })),
+    { label: "Both teams to score", family: "btts", spec: { t: "btts", yes: true } },
+    { label: "Both teams to score – No", family: "btts", spec: { t: "btts", yes: false } },
+    { label: `${home} to score`, family: "home-goals", spec: { t: "team", side: "h", min: 1 } },
+    { label: `${home} 2+ goals`, family: "home-goals", spec: { t: "team", side: "h", min: 2 } },
+    { label: `${away} clean sheet`, family: "home-goals", spec: { t: "team", side: "h", zero: true } },
+    { label: `${away} to score`, family: "away-goals", spec: { t: "team", side: "a", min: 1 } },
+    { label: `${away} 2+ goals`, family: "away-goals", spec: { t: "team", side: "a", min: 2 } },
+    { label: `${home} clean sheet`, family: "away-goals", spec: { t: "team", side: "a", zero: true } },
   ];
   const flat = cells(grid);
-  return legs.map((l) => {
-    const mask = maskFor(grid, l.test);
-    return { ...l, mask, p: jointChance(flat, [mask]) };
+  return defs.map((d) => {
+    const test: Test = (h, a) => gradeLeg(d.spec, h, a);
+    const mask = maskFor(grid, test);
+    return { ...d, test, mask, p: jointChance(flat, [mask]) };
   });
 }
 

@@ -2,10 +2,17 @@ name = "hawk"
 main = "src/index.ts"
 compatibility_date = "2025-09-01"
 
-# Times are UTC. Fires at minutes 0–6 of 08:00 and 09:00; the code only acts in the hour
-# that is 9am in Dublin (so summer and winter both work), one league per minute.
+# Times are UTC. Fires at minutes 0–6 and 8 of 08:00 and 09:00; the code only acts in the
+# hour that is 9am in Dublin (so summer and winter both work):
+# one league per minute 9:00–9:06, then Hawk's Acca at 9:08.
 [triggers]
-crons = ["0-6 8,9 * * *"]
+crons = ["0-6,8 8,9 * * *"]
+
+# Storage for saved picks (free Cloudflare KV). Paste your id from:
+#   npx wrangler kv namespace create HAWK
+[[kv_namespaces]]
+binding = "HAWK"
+id = "20193e2087f3499389ef760d78a5cbb2"
 
 # Plain settings – channel IDs aren't secret
 [vars]

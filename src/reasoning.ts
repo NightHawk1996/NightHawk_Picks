@@ -42,8 +42,10 @@ export function whyButton(code: string, postedAt: Date, homeId: number, awayId: 
 
 // Reads a menu choice or button press back into what to explain.
 export function parseWhy(customId: string, values?: string[]) {
-  const [tag, kind, code, ts, pair] = customId.split(":");
+  let [tag, kind, code, ts, pair] = customId.split(":");
   if (tag !== "why") return null;
+  // Acca legs come from different leagues, so each option carries its own league and time.
+  if (kind === "ac") [code, ts, pair] = (values?.[0] ?? "").split(":");
   const [homeId, awayId] = (pair ?? values?.[0] ?? "").split("-").map(Number);
   if (!code || !ts || !homeId || !awayId) return null;
   return { kind, code, postedAt: new Date(Number(ts) * 1000), homeId, awayId };
@@ -98,7 +100,7 @@ function legReason(label: string, family: string, p: Predicted): string {
   if (family === "result") {
     if (label.endsWith(" or draw")) {
       const team = label.replace(" or draw", "");
-      return `covers the draw (${pct(p.draw)}) as well as a ${team} win`;
+      return `covers the draw (${pct(p.draw)}) as well as ${team} winning`;
     }
     if (label.endsWith(" win")) return "Hawk's favourite result";
     return "";

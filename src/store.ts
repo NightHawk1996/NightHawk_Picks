@@ -1,0 +1,63 @@
+// Saves every pick Hawk posts, in a form #results can check against the final score.
+// Uses Cloudflare KV (free tier). Keys:
+//   picks:<date>:<league>  – each game's pick, bet builder and strongest legs
+//   acca:<date>            – the day's acca
+
+import type { LegSpec, Leg } from "./model";
+import type { Match, Predicted } from "./football";
+
+export interface StoredLeg { label: string; p: number; spec: LegSpec }
+export interface StoredGame {
+  homeId: number;
+  awayId: number;
+  home: string;
+  away: string;
+  kickOff: string;
+  pick: StoredLeg;
+  builder: { p: number; legs: StoredLeg[] } | null;
+  strong: (StoredLeg & { family: string })[]; // 80%+ legs, candidates for the acca
+}
+export interface StoredDay { code: string; date: string; postedAt: string; games: StoredGame[] }
+export interface StoredAccaLeg extends StoredLeg { code: string; homeId: number; awayId: number; home: string; away: string; kickOff: string; postedAt: string }
+export interface StoredAcca { date: string; postedAt: string; legs: StoredAccaLeg[]; p: number; safer: { legs: StoredAccaLeg[]; p: number } | null }
+
+const leg = (l: Leg): StoredLeg => ({ label: l.label, p: Math.round(l.p * 1000) / 1000, spec: l.spec });
+const TTL = 60 * 60 * 24 * 120; // keep 120 days, plenty for weekly model checks
+
+export function toStoredGames(list: { m: Match; p: Predicted }[]): StoredGame[] {
+  return list.map(({ m, p }) => {
+    const options = [
+      { side: "H" as const, label: `${p.homeName} win`, p: p.home },
+      { side: "D" as const, label: "Draw", p: p.draw },
+      { side: "A" as const, label: `${p.awayName} win`, p: p.away },
+    ];
+    const best = options.reduce((x, y) => (y.p > x.p ? y : x));
+    return {
+      homeId: m.homeTeam.id,
+      awayId: m.awayTeam.id,
+      home: p.homeName,
+      away: p.awayName,
+      kickOff: m.utcDate,
+      pick: { label: best.label, p: Math.round(best.p * 1000) / 1000, spec: { t: "res", v: best.side } },
+      builder: p.builder ? { p: Math.round(p.builder.p * 1000) / 1000, legs: p.builder.legs.map(leg) } : null,
+      strong: p.legs
+        .filter((l) => l.p >= 0.8 && l.p < 0.95)
+        .sort((x, y) => y.p - x.p)
+        .map((l) => ({ ...leg(l), family: l.family })),
+    };
+  });
+}
+
+export async function savePicks(kv: KVNamespace, day: StoredDay) {
+  await kv.put(`picks:${day.date}:${day.code}`, JSON.stringify(day), { expirationTtl: TTL });
+}
+
+export async function loadPicks(kv: KVNamespace, date: string): Promise<StoredDay[]> {
+  const list = await kv.list({ prefix: `picks:${date}:` });
+  const days = await Promise.all(list.keys.map((k) => kv.get<StoredDay>(k.name, "json")));
+  return days.filter((d): d is StoredDay => !!d);
+}
+
+export async function saveAcca(kv: KVNamespace, acca: StoredAcca) {
+  await kv.put(`acca:${acca.date}`, JSON.stringify(acca), { expirationTtl: TTL });
+}

@@ -57,7 +57,7 @@ const commands = [
   },
   {
     name: "daily-post",
-    description: "Run one league's 9am post now (admin only)",
+    description: "Run one league's 9am post, or the acca, now (admin only)",
     default_member_permissions: "0", // hidden from everyone except server admins
     options: [
       {
@@ -65,7 +65,10 @@ const commands = [
         description: "Which league to post",
         type: 3,
         required: true,
-        choices: leagueOption.choices.filter((c) => !["DED", "PPL"].includes(c.value)),
+        choices: [
+          ...leagueOption.choices.filter((c) => !["DED", "PPL"].includes(c.value)),
+          { name: "Hawk's Acca (run after the leagues)", value: "ACCA" },
+        ],
       },
     ],
   },
