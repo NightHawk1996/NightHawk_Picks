@@ -1,4 +1,6 @@
-// Football data from football-data.org (free tier): fixtures, form and league tables.
+// Football data from football-data.org (free tier): fixtures, form, tables and predictions.
+
+import { buildRatings, predict, light, pct, fairOdds, type Prediction } from "./model";
 
 export const LEAGUES: Record<string, { name: string; emoji: string }> = {
   PL: { name: "Premier League", emoji: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
@@ -14,7 +16,8 @@ export const LEAGUES: Record<string, { name: string; emoji: string }> = {
 
 const API = "https://api.football-data.org/v4";
 const COLOUR = 0xf2a900;
-const FORM_DAYS = 70; // how far back to look for recent results (covers international breaks)
+const HISTORY_DAYS = 120; // results used for form and ratings (older games barely count anyway)
+const AHEAD_DAYS = 14; // fixtures fetched ahead
 const DOT = { W: "🟢", D: "🟡", L: "🔴" } as const;
 type Result = keyof typeof DOT;
 
@@ -40,6 +43,7 @@ interface Row {
 }
 
 const DAY = 24 * 3600 * 1000;
+const DAY_LABEL = new Intl.DateTimeFormat("en-IE", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Dublin" });
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 const teamName = (t: Team) => t.shortName || t.name;
 const league = (code: string) => {
@@ -72,10 +76,11 @@ async function getJson(url: string, token: string): Promise<any> {
   return JSON.parse(text);
 }
 
-// One request gets both recent results (for form) and upcoming fixtures.
-async function getMatches(code: string, token: string, now: Date, daysAhead: number): Promise<Match[]> {
-  const from = new Date(now.getTime() - FORM_DAYS * DAY);
-  const to = new Date(now.getTime() + daysAhead * DAY);
+// One request gets recent results (for form and ratings) and upcoming fixtures.
+// Every command uses the same window, so they share the cache.
+async function getMatches(code: string, token: string, now: Date): Promise<Match[]> {
+  const from = new Date(now.getTime() - HISTORY_DAYS * DAY);
+  const to = new Date(now.getTime() + AHEAD_DAYS * DAY);
   const data = await getJson(`${API}/competitions/${code}/matches?dateFrom=${ymd(from)}&dateTo=${ymd(to)}`, token);
   return data.matches ?? [];
 }
@@ -113,8 +118,9 @@ export function venueRecord(teamId: number, matches: Match[], venue: "home" | "a
 
 // Last 5 results for a team, oldest first so the latest is on the right.
 export function formFor(teamId: number, matches: Match[], before: Date): Result[] {
+  const cutoff = before.toISOString().slice(0, 19); // compare as text – much faster than building dates
   return matches
-    .filter((m) => m.status === "FINISHED" && new Date(m.utcDate) < before && (m.homeTeam.id === teamId || m.awayTeam.id === teamId))
+    .filter((m) => m.status === "FINISHED" && (m.homeTeam.id === teamId || m.awayTeam.id === teamId) && m.utcDate.slice(0, 19) < cutoff)
     .sort((a, b) => a.utcDate.localeCompare(b.utcDate))
     .slice(-5)
     .map((m) => {
@@ -137,14 +143,19 @@ function fitLines(blocks: string[], limit = 3900, more = "_…more not shown_"):
 }
 
 // ---------------------------------------------------------------------------
-// Fixtures: /fixtures uses the next 7 days; the daily post uses the next 24 hours
-// and returns null when nothing is on, so empty channels don't get a post.
+// Fixtures: /fixtures uses the next 7 days; the daily post uses the next 24 hours.
+// One pass works out both the league post and the bet builders, so the data is
+// only fetched and processed once.
 // ---------------------------------------------------------------------------
-export async function fixturesEmbed(code: string, token: string, now = new Date(), hours = 168) {
+type Predicted = Prediction & { homeName: string; awayName: string };
+
+export async function leagueDay(code: string, token: string, now = new Date(), hours = 168, builderChannelId?: string) {
+  const builderLink = builderChannelId ? `<#${builderChannelId}>` : "#bet-builders";
   const l = league(code);
   const to = new Date(now.getTime() + hours * 3600 * 1000);
-  const matches = await getMatches(code, token, now, Math.ceil(hours / 24));
+  const matches = await getMatches(code, token, now);
 
+  const ratings = buildRatings(matches, now);
   const upcoming = matches.filter((m) => {
     const kickOff = new Date(m.utcDate);
     return ["SCHEDULED", "TIMED", "POSTPONED"].includes(m.status) && kickOff > now && kickOff <= to;
@@ -153,28 +164,67 @@ export async function fixturesEmbed(code: string, token: string, now = new Date(
   const daily = hours <= 24;
   const title = `${l.emoji} ${l.name} – ${daily ? "today's fixtures" : "next 7 days"}`;
   if (upcoming.length === 0) {
-    if (daily) return null;
-    return { title, description: "No fixtures in the next 7 days.", color: COLOUR };
+    if (daily) return { fixtures: null, builders: null, builderCount: 0 };
+    return { fixtures: { title, description: "No fixtures in the next 7 days.", color: COLOUR }, builders: null, builderCount: 0 };
   }
 
+  const PREDICT_LIMIT = 12; // keeps each run inside Cloudflare's free processing allowance
+  const predictions: { m: Match; p: Predicted }[] = [];
   const days = new Map<string, string[]>();
   for (const m of upcoming) {
     const kickOff = new Date(m.utcDate);
-    const day = kickOff.toLocaleDateString("en-IE", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Dublin" });
+    const day = DAY_LABEL.format(kickOff);
     const time = m.status === "POSTPONED" ? "**Postponed**" : `<t:${Math.floor(kickOff.getTime() / 1000)}:t>`;
     const homeForm = dots(formFor(m.homeTeam.id, matches, kickOff));
     const awayForm = dots(formFor(m.awayTeam.id, matches, kickOff));
-    const line = `${time} · **${teamName(m.homeTeam)}** v **${teamName(m.awayTeam)}**\n　${homeForm}  v  ${awayForm}`;
+    let line = `${time} · **${teamName(m.homeTeam)}** v **${teamName(m.awayTeam)}**\n　${homeForm}  v  ${awayForm}`;
+    if (m.status !== "POSTPONED" && predictions.length < PREDICT_LIMIT) {
+      const p = predictMatch(ratings, m);
+      predictions.push({ m, p });
+      line += "\n" + predictionLine(p);
+    }
     if (!days.has(day)) days.set(day, []);
     days.get(day)!.push(line);
   }
 
-  return {
+  const withBuilder = predictions.filter((x) => x.p.builder);
+  const top = upcoming.length > PREDICT_LIMIT ? `_Predictions shown for the first ${PREDICT_LIMIT} games – use /predict for the rest._\n\n` : "";
+  const pointer = withBuilder.length ? `\n\n🧩 **Bet builders for these games** → ${builderLink}` : "";
+  const fixtures = {
     title,
-    description: fitLines([...days].map(([day, lines]) => `**${day}**\n${lines.join("\n")}\n\n`), 3900, "_…more fixtures not shown_"),
+    description: top + fitLines([...days].map(([day, lines]) => `**${day}**\n${lines.join("\n")}\n\n`), 3700, "_…more fixtures not shown_") + pointer,
     color: COLOUR,
-    footer: { text: "Form: last 5 in this competition, latest on the right · Times in your time zone · Data: football-data.org" },
+    footer: { text: "Form: last 5, latest on the right · Times in your time zone · Powered by Hawk 🦅" },
   };
+
+  return { fixtures, builders: buildersEmbed(l, withBuilder, daily), builderCount: withBuilder.length };
+}
+
+// The #bet-builders post: one builder per match, most likely first.
+function buildersEmbed(l: { name: string; emoji: string }, list: { m: Match; p: Predicted }[], daily: boolean) {
+  if (list.length === 0) return null;
+  const blocks = [...list]
+    .sort((a, b) => b.p.builder!.p - a.p.builder!.p)
+    .map(({ m, p }) => {
+      const b = p.builder!;
+      const kickOff = Math.floor(new Date(m.utcDate).getTime() / 1000);
+      return [
+        `**${p.homeName} v ${p.awayName}** · <t:${kickOff}:${daily ? "t" : "f"}>`,
+        ...b.legs.map((x) => `• ${x.label} (${pct(x.p)})`),
+        `Together **${pct(b.p)}** · worth it at **${fairOdds(b.p)}** or bigger\n\n`,
+      ].join("\n");
+    });
+  return {
+    title: `🧩 ${l.emoji} ${l.name} – ${daily ? "today's" : "this week's"} bet builders`,
+    description: fitLines(blocks, 3800, "_…more builders not shown_"),
+    color: COLOUR,
+    footer: { text: "Most likely first · Priced as one bet, not leg by leg · Powered by Hawk 🦅" },
+  };
+}
+
+// /fixtures – the league list only (builders live in #bet-builders).
+export async function fixturesEmbed(code: string, token: string, now = new Date(), hours = 168, builderChannelId?: string) {
+  return (await leagueDay(code, token, now, hours, builderChannelId)).fixtures;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +232,7 @@ export async function fixturesEmbed(code: string, token: string, now = new Date(
 // ---------------------------------------------------------------------------
 export async function tableEmbed(code: string, token: string, now = new Date()) {
   const l = league(code);
-  const [{ total }, matches] = await Promise.all([getStandings(code, token), getMatches(code, token, now, 0)]);
+  const [{ total }, matches] = await Promise.all([getStandings(code, token), getMatches(code, token, now)]);
   if (total.length === 0) return { title: `${l.emoji} ${l.name} – table`, description: "No table available yet.", color: COLOUR };
 
   const lines = total.map((r) => {
@@ -194,7 +244,7 @@ export async function tableEmbed(code: string, token: string, now = new Date()) 
     title: `${l.emoji} ${l.name} – table`,
     description: fitLines(lines),
     color: COLOUR,
-    footer: { text: "Form: last 5 in this competition, latest on the right · Data: football-data.org" },
+    footer: { text: "Form: last 5 in this competition, latest on the right · Powered by Hawk 🦅" },
   };
 }
 
@@ -267,6 +317,94 @@ export async function formEmbed(code: string, query: string, token: string, now 
       recent.length ? recent.join("\n") : "No results in the last few weeks.",
     ].join("\n"),
     color: COLOUR,
-    footer: { text: `${l.name} only · Data: football-data.org` },
+    footer: { text: `${l.name} only · Powered by Hawk 🦅` },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Predictions
+// ---------------------------------------------------------------------------
+const predictMatch = (ratings: ReturnType<typeof buildRatings>, m: Match): Predicted => {
+  const homeName = teamName(m.homeTeam), awayName = teamName(m.awayTeam);
+  return { ...predict(ratings, m.homeTeam, m.awayTeam, homeName, awayName), homeName, awayName };
+};
+
+const pickOf = (p: Predicted) => {
+  const options = [
+    { label: p.homeName, p: p.home },
+    { label: "Draw", p: p.draw },
+    { label: p.awayName, p: p.away },
+  ];
+  return options.reduce((a, b) => (b.p > a.p ? b : a));
+};
+
+// One compact line for fixture lists and the daily post.
+function predictionLine(p: Predicted): string {
+  const pick = pickOf(p);
+  return `　🎯 ${p.homeName} ${pct(p.home)} · Draw ${pct(p.draw)} · ${p.awayName} ${pct(p.away)} → **${pick.label}** ${light(pick.p)} · ${p.likely.h}-${p.likely.a}`;
+}
+
+// /predict – the full card for a team's next match.
+export async function predictEmbed(code: string, query: string, token: string, now = new Date()) {
+  const l = league(code);
+  const [{ total }, matches] = await Promise.all([getStandings(code, token), getMatches(code, token, now)]);
+  const { match: row, suggestions } = findTeam(query, total.length ? total : teamsFrom(matches));
+  if (!row) {
+    const hint = suggestions.length ? `Did you mean: ${suggestions.map((r) => `**${teamName(r.team)}**`).join(", ")}?` : `I looked in the ${l.name}.`;
+    throw new Error(`Couldn't find "${query}". ${hint}`);
+  }
+  const id = row.team.id;
+  const next = matches
+    .filter((m) => ["SCHEDULED", "TIMED"].includes(m.status) && new Date(m.utcDate) > now && (m.homeTeam.id === id || m.awayTeam.id === id))
+    .sort((a, b) => a.utcDate.localeCompare(b.utcDate))[0];
+  if (!next) throw new Error(`${teamName(row.team)} have no ${l.name} game in the next ${AHEAD_DAYS} days.`);
+
+  const p = predictMatch(buildRatings(matches, now), next);
+  const pick = pickOf(p);
+  const leg = (label: string) => p.legs.find((x) => x.label === label)!;
+  const show = (label: string) => { const x = leg(label); return `${x.label} **${pct(x.p)}** ${light(x.p)}`; };
+  const kickOff = Math.floor(new Date(next.utcDate).getTime() / 1000);
+
+  const fields = [
+    {
+      name: "🎯 Result",
+      value: `🏠 ${p.homeName} **${pct(p.home)}** · 🤝 Draw **${pct(p.draw)}** · ✈️ ${p.awayName} **${pct(p.away)}**\nHawk's pick: **${pick.label}** ${light(pick.p)} – worth it at **${fairOdds(pick.p)}** or bigger`,
+    },
+    {
+      name: "📊 Likely score",
+      value: `**${p.likely.h}-${p.likely.a}** (${pct(p.likely.p)}) · expected goals ${p.xgHome.toFixed(1)} – ${p.xgAway.toFixed(1)}`,
+    },
+    {
+      name: "⚽ Goals",
+      value: [show("Over 1.5 goals"), show("Over 2.5 goals"), show("Under 3.5 goals"), show("Both teams to score"), show("Both teams to score – No")].join("\n"),
+    },
+    {
+      name: "🛡️ Safer markets",
+      value: [show(`${p.homeName} or draw`), show(`${p.awayName} or draw`), show(`${p.homeName} to score`), show(`${p.awayName} to score`)].join("\n"),
+    },
+    {
+      name: "🧩 Hawk's bet builder",
+      value: p.builder
+        ? `${p.builder.legs.map((x) => `• ${x.label} (${pct(x.p)})`).join("\n")}\nTogether: **${pct(p.builder.p)}** – worth it at **${fairOdds(p.builder.p)}** or bigger\n_Priced as one bet, not leg by leg._`
+        : "Nothing strong enough here – no builder lands 40%+ with real legs.",
+    },
+  ];
+
+  const caution = p.dataGames < 6 ? "\n⚠️ _Early days – fewer than 6 games to rate these teams on, so treat with care._" : "";
+  return {
+    title: `🔮 ${p.homeName} v ${p.awayName}`,
+    description: `${l.emoji} ${l.name} · <t:${kickOff}:F> (<t:${kickOff}:R>)${caution}`,
+    color: COLOUR,
+    fields,
+    footer: { text: "Based on this season's goals only – no odds, injuries or team news yet · Powered by Hawk 🦅" },
+  };
+}
+
+// Fallback team list for competitions without a table (e.g. knockout stages).
+function teamsFrom(matches: Match[]): Row[] {
+  const seen = new Map<number, Row>();
+  for (const m of matches) for (const t of [m.homeTeam, m.awayTeam]) {
+    if (t?.id && !seen.has(t.id)) seen.set(t.id, { position: 0, team: t, playedGames: 0, won: 0, draw: 0, lost: 0, points: 0, goalsFor: 0, goalsAgainst: 0, goalDifference: 0 });
+  }
+  return [...seen.values()];
 }

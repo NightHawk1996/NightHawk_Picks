@@ -2,14 +2,15 @@
 // Discord POSTs every interaction here. We check the signature (so only Discord can
 // talk to Hawk), then reply.
 
-import { fixturesEmbed, tableEmbed, formEmbed } from "./football";
-import { runDailyPost, isNineInDublin } from "./daily";
+import { fixturesEmbed, tableEmbed, formEmbed, predictEmbed } from "./football";
+import { runLeaguePost, leagueForRun } from "./daily";
 
 export interface Env {
   DISCORD_PUBLIC_KEY: string;
   FOOTBALL_DATA_TOKEN: string;
   DISCORD_TOKEN: string;
   GUILD_ID: string;
+  BET_BUILDERS_CHANNEL_ID?: string;
 }
 
 const InteractionType = { PING: 1, APPLICATION_COMMAND: 2 } as const;
@@ -87,7 +88,7 @@ export default {
         case "fixtures": {
           const league = option(interaction, "league") ?? "PL";
           ctx.waitUntil(
-            fixturesEmbed(league, env.FOOTBALL_DATA_TOKEN)
+            fixturesEmbed(league, env.FOOTBALL_DATA_TOKEN, new Date(), 168, env.BET_BUILDERS_CHANNEL_ID)
               .then((embed) => finishReply(interaction, { embeds: [embed] }))
               .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
           );
@@ -115,10 +116,22 @@ export default {
           return reply({ type: ResponseType.DEFERRED_MESSAGE });
         }
 
-        // Admin-only: run the 9am post now, for testing.
-        case "daily-post": {
+        case "predict": {
+          const team = option(interaction, "team") ?? "";
+          const league = option(interaction, "league") ?? "PL";
           ctx.waitUntil(
-            runDailyPost(env)
+            predictEmbed(league, team, env.FOOTBALL_DATA_TOKEN)
+              .then((embed) => finishReply(interaction, { embeds: [embed] }))
+              .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
+          );
+          return reply({ type: ResponseType.DEFERRED_MESSAGE });
+        }
+
+        // Admin-only: run one league's 9am post now, for testing.
+        case "daily-post": {
+          const league = option(interaction, "league") ?? "PL";
+          ctx.waitUntil(
+            runLeaguePost(env, league)
               .then((summary) => finishReply(interaction, { content: summary }))
               .catch((err) => finishReply(interaction, { content: `⚠️ Daily post failed: ${err.message}` })),
           );
@@ -136,7 +149,8 @@ export default {
   // Runs on the schedule in wrangler.toml.
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const when = new Date(controller.scheduledTime);
-    if (!isNineInDublin(when)) return;
-    ctx.waitUntil(runDailyPost(env, when).then(() => {}));
+    const league = leagueForRun(when);
+    if (!league) return;
+    ctx.waitUntil(runLeaguePost(env, league, when).then(() => {}));
   },
 };

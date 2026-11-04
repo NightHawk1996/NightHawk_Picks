@@ -31,7 +31,7 @@ const commands = [
   { name: "ping", description: "Check Hawk is awake" },
   {
     name: "fixtures",
-    description: "Upcoming fixtures for the next 7 days, with form",
+    description: "Upcoming fixtures for the next 7 days, with form and predictions",
     options: [leagueOption],
   },
   {
@@ -48,9 +48,26 @@ const commands = [
     ],
   },
   {
+    name: "predict",
+    description: "Hawk's prediction and bet builder for a team's next match",
+    options: [
+      { name: "team", description: "Team name, e.g. Arsenal or Man City", type: 3, required: true },
+      leagueOption,
+    ],
+  },
+  {
     name: "daily-post",
-    description: "Run today's 9am fixtures post now (admin only)",
+    description: "Run one league's 9am post now (admin only)",
     default_member_permissions: "0", // hidden from everyone except server admins
+    options: [
+      {
+        name: "league",
+        description: "Which league to post",
+        type: 3,
+        required: true,
+        choices: leagueOption.choices.filter((c) => !["DED", "PPL"].includes(c.value)),
+      },
+    ],
   },
 ];
 

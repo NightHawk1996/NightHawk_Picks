@@ -2,10 +2,14 @@ name = "hawk"
 main = "src/index.ts"
 compatibility_date = "2025-09-01"
 
-# Times are UTC. Both run every day; the code only posts on the one that is 9am in Dublin,
-# so it stays at 9am Irish time in summer and winter.
+# Times are UTC. Fires at minutes 0–6 of 08:00 and 09:00; the code only acts in the hour
+# that is 9am in Dublin (so summer and winter both work), one league per minute.
 [triggers]
-crons = ["0 8 * * *", "0 9 * * *"]
+crons = ["0-6 8,9 * * *"]
+
+# Plain settings – channel IDs aren't secret
+[vars]
+BET_BUILDERS_CHANNEL_ID = "1567485462707310593"
 
 # Secrets (set with: npx wrangler secret put NAME)
 #   DISCORD_PUBLIC_KEY, DISCORD_TOKEN, GUILD_ID, FOOTBALL_DATA_TOKEN
