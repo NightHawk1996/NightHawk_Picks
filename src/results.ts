@@ -6,7 +6,8 @@ import { getResults, LEAGUES, COLOUR, type Match } from "./football";
 import { gradeLeg, pct } from "./model";
 import { discord, getChannels, cleanChannel, log, type DiscordEnv } from "./discord";
 import type { StoredDay, StoredAcca, StoredGame } from "./store";
-import { loadPicks } from "./store";
+import { loadPicks, loadAccasSettling } from "./store";
+import { ACCA_NAMES } from "./acca";
 
 export interface ResultsEnv extends DiscordEnv {
   FOOTBALL_DATA_TOKEN: string;
@@ -23,6 +24,7 @@ export interface GradedDay { date: string; items: GradedItem[] }
 
 const nextDay = (date: string) => new Date(Date.parse(`${date}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
 const LABEL = new Intl.DateTimeFormat("en-IE", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+const SHORT_DAY = new Intl.DateTimeFormat("en-IE", { weekday: "short", timeZone: "Europe/Dublin" });
 const dateLabel = (date: string) => LABEL.format(new Date(`${date}T12:00:00Z`)).replace(",", "");
 
 interface Final { status: "done" | "void" | "pending"; h: number; a: number }
@@ -56,12 +58,16 @@ function combine(outcomes: Outcome[]): Outcome {
 export async function gradeDay(env: ResultsEnv, date: string) {
   if (!env.HAWK) throw new Error("storage not set up");
   const days = (await loadPicks(env.HAWK, date)).filter((d) => d.games.length);
-  const acca = await env.HAWK.get<StoredAcca>(`acca:${date}`, "json");
+  const accas = await loadAccasSettling(env.HAWK, date);
 
-  // One small results request per league that had picks (or acca legs).
-  const codes = new Set([...days.map((d) => d.code), ...(acca?.legs.map((l) => l.code) ?? [])]);
+  // One small results request per league, covering every day its games were on
+  // (weekend and matchweek accas reach back a few days).
+  const from: Record<string, string> = {};
+  const note = (code: string, d: string) => { if (!from[code] || d < from[code]) from[code] = d; };
+  for (const d of days) note(d.code, date);
+  for (const a of accas) for (const l of a.legs) note(l.code, l.kickOff.slice(0, 10));
   const results: Record<string, Match[]> = {};
-  for (const code of codes) results[code] = await getResults(code, env.FOOTBALL_DATA_TOKEN, date, nextDay(date));
+  for (const [code, start] of Object.entries(from)) results[code] = await getResults(code, env.FOOTBALL_DATA_TOKEN, start, nextDay(date));
 
   const items: GradedItem[] = [];
   const embeds: any[] = [];
@@ -94,22 +100,27 @@ export async function gradeDay(env: ResultsEnv, date: string) {
     embeds.push({ title: `📈 ${l.emoji} ${l.name} – ${dateLabel(date)}`, description: description.slice(0, 4000), color: COLOUR });
   }
 
-  // The acca
-  let accaOutcome: Outcome | null = null;
-  if (acca) {
+  // The accas – daily, weekend, around the leagues, Champions League
+  const ORDER = ["daily", "clnight", "clweek", "weekend", "around"];
+  const accaMarks: string[] = [];
+  for (const acca of accas.sort((x, y) => ORDER.indexOf(x.kind ?? "daily") - ORDER.indexOf(y.kind ?? "daily"))) {
+    const kind = acca.kind ?? "daily";
     const legs = acca.legs.map((x) => {
       const f = finalScore(results[x.code] ?? [], x);
       return { ...x, f, o: legOutcome(f, x.spec) };
     });
     for (const x of legs) items.push({ kind: "leg", p: x.p, outcome: x.o, code: x.code });
-    accaOutcome = combine(legs.map((x) => x.o));
-    items.push({ kind: "acca", p: acca.p, outcome: accaOutcome });
+    const outcome = combine(legs.map((x) => x.o));
+    items.push({ kind: "acca", p: acca.p, outcome });
+    const name = ACCA_NAMES[kind];
+    accaMarks.push(`${name.split(" ")[0]} ${MARK[outcome]}`);
     const lost = legs.filter((x) => x.o === "lost").length;
-    const headline = accaOutcome === "won" ? "✅ **Landed!**" : accaOutcome === "lost" ? `❌ **Lost**${lost === 1 ? " – by one leg" : ` – ${lost} legs let it down`}` : `${MARK[accaOutcome]} **${accaOutcome}**`;
+    const headline = outcome === "won" ? "✅ **Landed!**" : outcome === "lost" ? `❌ **Lost**${lost === 1 ? " – by one leg" : ` – ${lost} legs let it down`}` : `${MARK[outcome]} **${outcome}**`;
+    const multiDay = new Set(legs.map((x) => x.kickOff.slice(0, 10))).size > 1;
     embeds.push({
-      title: `🎟️ Hawk's Acca – ${dateLabel(date)}`,
+      title: `${name} – ${dateLabel(date)}`,
       description: `${legs.length} legs · ${pct(acca.p)} together → ${headline}\n\n` +
-        legs.map((x) => `${MARK[x.o]} ${scoreLine(x, x.f)} · ${x.label} ${pct(x.p)}`).join("\n"),
+        legs.map((x) => `${MARK[x.o]} ${scoreLine(x, x.f)}${multiDay ? ` (${SHORT_DAY.format(new Date(x.kickOff))})` : ""} · ${x.label} ${pct(x.p)}`).join("\n"),
       color: COLOUR,
     });
   }
@@ -123,7 +134,7 @@ export async function gradeDay(env: ResultsEnv, date: string) {
   const tally = [
     `🎯 Picks **${picks.won}/${picks.total}**` + (strong.total ? ` (✅ 70%+ picks: **${strong.won}/${strong.total}**)` : ""),
     builders.total ? `🧩 Builders **${builders.won}/${builders.total}**` : "",
-    accaOutcome ? `🎟️ Acca ${MARK[accaOutcome]}` : "",
+    accaMarks.length ? `Accas: ${accaMarks.join(" ")}` : "",
   ].filter(Boolean).join(" · ");
   const pending = items.some((i) => i.outcome === "pending") ? "\n⏳ Some games hadn't finished – they'll count once they have." : "";
   if (embeds.length) {

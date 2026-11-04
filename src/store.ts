@@ -19,7 +19,16 @@ export interface StoredGame {
 }
 export interface StoredDay { code: string; date: string; postedAt: string; games: StoredGame[] }
 export interface StoredAccaLeg extends StoredLeg { code: string; homeId: number; awayId: number; home: string; away: string; kickOff: string; postedAt: string }
-export interface StoredAcca { date: string; postedAt: string; legs: StoredAccaLeg[]; p: number; safer: { legs: StoredAccaLeg[]; p: number } | null }
+export type AccaKind = "daily" | "weekend" | "around" | "clweek" | "clnight";
+export interface StoredAcca {
+  kind?: AccaKind; // missing on accas saved before step 14 = daily
+  date: string; // day it was posted
+  settleDate?: string; // day of its last game – #results grades it the morning after
+  postedAt: string;
+  legs: StoredAccaLeg[];
+  p: number;
+  safer: { legs: StoredAccaLeg[]; p: number } | null;
+}
 
 const leg = (l: Leg): StoredLeg => ({ label: l.label, p: Math.round(l.p * 1000) / 1000, spec: l.spec });
 const TTL = 60 * 60 * 24 * 120; // keep 120 days, plenty for weekly model checks
@@ -58,6 +67,23 @@ export async function loadPicks(kv: KVNamespace, date: string): Promise<StoredDa
   return days.filter((d): d is StoredDay => !!d);
 }
 
+// Saved under the day of its last game, so #results finds it the next morning.
 export async function saveAcca(kv: KVNamespace, acca: StoredAcca) {
-  await kv.put(`acca:${acca.date}`, JSON.stringify(acca), { expirationTtl: TTL });
+  await kv.put(`acca:${acca.settleDate ?? acca.date}:${acca.kind ?? "daily"}`, JSON.stringify(acca), { expirationTtl: TTL });
+}
+
+export async function loadAccasSettling(kv: KVNamespace, date: string): Promise<StoredAcca[]> {
+  const list = await kv.list({ prefix: `acca:${date}` });
+  const accas = await Promise.all(list.keys.map((k) => kv.get<StoredAcca>(k.name, "json")));
+  return accas.filter((a): a is StoredAcca => !!a);
+}
+
+// Games further ahead (weekend / Champions League week), saved by the league runs.
+export async function saveAhead(kv: KVNamespace, day: StoredDay) {
+  await kv.put(`ahead:${day.date}:${day.code}`, JSON.stringify(day), { expirationTtl: 60 * 60 * 24 * 14 });
+}
+export async function loadAhead(kv: KVNamespace, date: string, code?: string): Promise<StoredDay[]> {
+  const list = await kv.list({ prefix: `ahead:${date}:${code ?? ""}` });
+  const days = await Promise.all(list.keys.map((k) => kv.get<StoredDay>(k.name, "json")));
+  return days.filter((d): d is StoredDay => !!d);
 }

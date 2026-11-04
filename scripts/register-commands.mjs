@@ -67,7 +67,9 @@ const commands = [
         required: true,
         choices: [
           ...leagueOption.choices.filter((c) => !["DED", "PPL"].includes(c.value)),
-          { name: "Hawk's Acca (run after the leagues)", value: "ACCA" },
+          { name: "Daily acca (run after the leagues)", value: "ACCA" },
+          { name: "Weekend accas (run after the leagues)", value: "WEEKEND" },
+          { name: "Champions League accas (run after CL)", value: "CLACCAS" },
           { name: "Results – yesterday", value: "RESULTS" },
           { name: "Results – today so far", value: "RESULTS_TODAY" },
         ],

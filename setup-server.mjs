@@ -82,7 +82,9 @@ const LAYOUT = [
     name: "🎯 Picks",
     readOnly: true,
     channels: [
-      { name: "hawk-acca", topic: "Hawk's acca – the strongest legs across every sport" },
+      { name: "hawk-daily-accas", from: "hawk-acca", topic: "Today's acca – the strongest legs from the domestic leagues" },
+      { name: "hawk-weekend-accas", topic: "Posted Fridays – the weekend acca and Around the Leagues" },
+      { name: "hawk-cl-accas", topic: "Champions League – the matchweek acca and tonight's acca" },
       { name: "bet-builders", topic: "Hawk's bet builders – legs from one match, priced together" },
       { name: "hawk-reasoning", topic: "Daily summary of why Hawk made today's picks – use 🔍 Why? on any post for the full reasoning" },
       { name: "results", topic: "Yesterday's legs – ✅ won · ❌ lost · ➖ void" },
@@ -120,7 +122,7 @@ What you get is plain English: what's likely, how sure Hawk is, and whether the 
 🏇 {#racecards} · {#going-reports} · {#racing-results}
 🏆 {#cheltenham-2027} · {#aintree-2027}
 🥊 {#ufc} · {#boxing} · {#fight-cards}
-🎟️ {#hawk-acca} · {#results} · {#model-check}`,
+🎟️ {#hawk-daily-accas} · {#results} · {#model-check}`,
   },
   {
     title: "⚽ Football – what Hawk looks at",
@@ -190,7 +192,7 @@ What you get is plain English: what's likely, how sure Hawk is, and whether the 
     title: "🎟️ Accas, bankers and value",
     description: `🔒 **Bankers** – the day's most probable selections, across every sport.
 
-🎟️ **Hawk's Acca** – posted in {#hawk-acca}. Only legs Hawk rates at 80% or more make the cut. You'll always see the combined chance of the whole thing, plus a shorter 4-leg alternative when the full version is a stretch.
+🎟️ **Hawk's Acca** – posted in {#hawk-daily-accas}. Only legs Hawk rates at 80% or more make the cut. You'll always see the combined chance of the whole thing, plus a shorter 4-leg alternative when the full version is a stretch.
 
 📐 **The acca maths, honestly** – chances multiply. Four 80% legs together come out at roughly 41%, so an acca is never as safe as its individual legs look. That's why the combined figure is always shown.
 
@@ -331,8 +333,13 @@ async function main() {
     for (const [chIndex, ch] of cat.channels.entries()) {
       const flags = { readOnly: cat.readOnly, private: ch.private };
       let channel = existing.find((c) => c.type === 0 && c.name === ch.name && c.parent_id === category.id);
+      const old = !channel && ch.from && existing.find((c) => c.type === 0 && c.name === ch.from);
       if (channel) {
         console.log(`   ✔ exists: #${ch.name}`);
+      } else if (old) {
+        // Rename rather than recreate, so the channel keeps its ID, history and permissions.
+        channel = await api("PATCH", `/channels/${old.id}`, { name: ch.name, topic: ch.topic, parent_id: category.id });
+        console.log(`   ✏️ renamed: #${ch.from} → #${ch.name}`);
       } else {
         channel = await api("POST", `/guilds/${GUILD_ID}/channels`, {
           name: ch.name,

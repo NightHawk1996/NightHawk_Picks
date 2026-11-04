@@ -4,7 +4,7 @@
 
 import { leagueDay, tableEmbed, formEmbed, predictEmbed } from "./football";
 import { whyMenu, whyButton, parseWhy, explainMatch } from "./reasoning";
-import { runLeaguePost, runAccaPost, jobForRun } from "./daily";
+import { runLeaguePost, runAccaPost, runWeekendPost, runChampionsLeaguePost, runSpecialPosts, jobForRun } from "./daily";
 import { runResultsPost, hasPending } from "./results";
 import { dublinDate } from "./discord";
 
@@ -148,9 +148,11 @@ export default {
           const today = dublinDate(new Date()), yesterday = dublinDate(new Date(Date.now() - 864e5));
           const job =
             league === "ACCA" ? runAccaPost(env)
+            : league === "WEEKEND" ? runWeekendPost(env)
+            : league === "CLACCAS" ? runChampionsLeaguePost(env, new Date(), true)
             : league === "RESULTS" ? runResultsPost(env, yesterday)
             : league === "RESULTS_TODAY" ? runResultsPost(env, today)
-            : runLeaguePost(env, league);
+            : runLeaguePost(env, league, new Date(), true);
           ctx.waitUntil(
             job
               .then((summary) => finishReply(interaction, { content: summary }))
@@ -187,6 +189,7 @@ export default {
     if (!job) return;
     const run =
       job === "ACCA" ? runAccaPost(env, when)
+      : job === "SPECIAL" ? runSpecialPosts(env, when)
       : job === "RESULTS" ? runDailyResults(env, when)
       : runLeaguePost(env, job, when);
     ctx.waitUntil(run.then(() => {}));

@@ -160,7 +160,7 @@ export function fitLines(blocks: string[], limit = 3900, more = "_…more not sh
 // ---------------------------------------------------------------------------
 export type Predicted = Prediction & { homeName: string; awayName: string };
 
-export async function leagueDay(code: string, token: string, now = new Date(), hours = 168, builderChannelId?: string) {
+export async function leagueDay(code: string, token: string, now = new Date(), hours = 168, builderChannelId?: string, aheadUntil?: Date) {
   const builderLink = builderChannelId ? `<#${builderChannelId}>` : "#bet-builders";
   const l = league(code);
   const to = new Date(now.getTime() + hours * 3600 * 1000);
@@ -172,13 +172,25 @@ export async function leagueDay(code: string, token: string, now = new Date(), h
     return ["SCHEDULED", "TIMED", "POSTPONED"].includes(m.status) && kickOff > now && kickOff <= to;
   });
 
+  // Games further ahead (weekend or Champions League week), predicted but not posted –
+  // their strongest legs are saved for the weekend and matchweek accas.
+  const AHEAD_LIMIT = 20;
+  const ahead: { m: Match; p: Predicted }[] = [];
+  if (aheadUntil) {
+    const soon = matches
+      .filter((m) => ["SCHEDULED", "TIMED"].includes(m.status) && new Date(m.utcDate) > now && new Date(m.utcDate) <= aheadUntil)
+      .sort((x, y) => x.utcDate.localeCompare(y.utcDate))
+      .slice(0, AHEAD_LIMIT);
+    for (const m of soon) ahead.push({ m, p: predictMatch(ratings, m) });
+  }
+
   const daily = hours <= 24;
   const title = `${l.emoji} ${l.name} – ${daily ? "today's fixtures" : "next 7 days"}`;
   if (upcoming.length === 0) {
     const later = matches
       .filter((m) => ["SCHEDULED", "TIMED"].includes(m.status) && new Date(m.utcDate) > to)
       .sort((x, y) => x.utcDate.localeCompare(y.utcDate))[0];
-    const empty = { builders: null, builderCount: 0, predictions: [] as { m: Match; p: Predicted }[], matches, ratings, league: l, nextKickOff: later ? new Date(later.utcDate) : null };
+    const empty = { builders: null, builderCount: 0, predictions: [] as { m: Match; p: Predicted }[], ahead, matches, ratings, league: l, nextKickOff: later ? new Date(later.utcDate) : null };
     if (daily) return { fixtures: null, ...empty };
     return { fixtures: { title, description: "No fixtures in the next 7 days.", color: COLOUR }, ...empty };
   }
@@ -194,7 +206,7 @@ export async function leagueDay(code: string, token: string, now = new Date(), h
     const awayForm = dots(formFor(m.awayTeam.id, matches, kickOff));
     let line = `${time} · **${teamName(m.homeTeam)}** v **${teamName(m.awayTeam)}**\n　${homeForm}  v  ${awayForm}`;
     if (m.status !== "POSTPONED" && predictions.length < PREDICT_LIMIT) {
-      const p = predictMatch(ratings, m);
+      const p = ahead.find((x) => x.m === m)?.p ?? predictMatch(ratings, m);
       predictions.push({ m, p });
       line += "\n" + predictionLine(p);
     }
@@ -212,7 +224,7 @@ export async function leagueDay(code: string, token: string, now = new Date(), h
     footer: { text: "Form: last 5, latest on the right · Times in your time zone · Powered by Hawk 🦅" },
   };
 
-  return { fixtures, builders: buildersEmbed(l, withBuilder, daily), builderCount: withBuilder.length, predictions, matches, ratings, league: l, nextKickOff: null as Date | null };
+  return { fixtures, builders: buildersEmbed(l, withBuilder, daily), builderCount: withBuilder.length, predictions, ahead, matches, ratings, league: l, nextKickOff: null as Date | null };
 }
 
 // The #bet-builders post: one builder per match, most likely first.
