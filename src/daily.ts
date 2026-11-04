@@ -224,12 +224,20 @@ export async function runChampionsLeaguePost(env: DailyEnv, now = new Date(), fo
     const weekId = `clweek:${weekKey(now)}`;
     if (forceWeek || !(await env.HAWK.get(weekId))) {
       const ahead = await loadAhead(env.HAWK, today, "CL");
-      const week = buildAcca("clweek", candidateLegs(ahead, now), today, now);
+      const legs = candidateLegs(ahead, now);
       await cleanChannel(env, channelId, ch.botId, () => true); // new week – clear last week's
-      await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [accaEmbed("clweek", week, now)], components: accaWhyMenu("clweek", week) });
-      if (week) await saveAcca(env.HAWK, week);
+      // A matchweek acca only makes sense across two or more nights – otherwise it's just
+      // tonight's acca twice.
+      const nights = new Set(legs.map((l) => dublinDate(new Date(l.kickOff)))).size;
+      if (nights >= 2) {
+        const week = buildAcca("clweek", legs, today, now);
+        await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [accaEmbed("clweek", week, now)], components: accaWhyMenu("clweek", week) });
+        if (week) await saveAcca(env.HAWK, week);
+        parts.push(`matchweek ${week ? `${week.legs.length} legs, ${Math.round(week.p * 100)}%` : "none"}`);
+      } else {
+        parts.push("matchweek skipped (only one night left this week)");
+      }
       await env.HAWK.put(weekId, "posted", { expirationTtl: 60 * 60 * 24 * 10 });
-      parts.push(`matchweek ${week ? `${week.legs.length} legs, ${Math.round(week.p * 100)}%` : "none"}`);
     }
 
     const night = buildAcca("clnight", candidateLegs(tonight, now), today, now);

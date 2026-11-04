@@ -79,6 +79,8 @@ export function accaTitle(kind: AccaKind, acca: StoredAcca | null, now: Date) {
     const first = acca.legs[0].kickOff, last = acca.legs.at(-1)!.kickOff;
     return `${ACCA_NAMES[kind]} – ${SHORT.format(new Date(first))} to ${DAY.format(new Date(last))}`;
   }
+  if (kind === "weekend" || kind === "around") return `${ACCA_NAMES[kind]} – this weekend`;
+  if (kind === "clweek") return `${ACCA_NAMES[kind]} – this week`;
   return `${ACCA_NAMES[kind]} – ${DAY.format(now)}`;
 }
 
@@ -93,7 +95,8 @@ export function accaEmbed(kind: AccaKind, acca: StoredAcca | null, now: Date, em
     };
   }
   const multiDay = kind === "weekend" || kind === "clweek" || kind === "around";
-  const when = (iso: string) => `<t:${unix(iso)}:${multiDay ? "f" : "t"}>`;
+  // Multi-day accas show the day too: "Sat 7 · 12:30" (the time is in each viewer's time zone)
+  const when = (iso: string) => `${multiDay ? `${SHORT.format(new Date(iso))} · ` : ""}<t:${unix(iso)}:t>`;
   const line = (l: StoredAccaLeg, i: number) =>
     `**${i + 1}.** ${LEAGUES[l.code]?.emoji ?? "⚽"} ${l.home} v ${l.away} · ${when(l.kickOff)}\n　**${l.label}** – ${pct(l.p)}`;
   const parts = [
