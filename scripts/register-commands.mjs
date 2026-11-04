@@ -72,6 +72,7 @@ const commands = [
           { name: "Champions League accas (run after CL)", value: "CLACCAS" },
           { name: "Results – yesterday", value: "RESULTS" },
           { name: "Results – today so far", value: "RESULTS_TODAY" },
+          { name: "Model check – last 7 days (preview)", value: "MODELCHECK" },
         ],
       },
     ],

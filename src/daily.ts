@@ -5,6 +5,7 @@
 //   9:09       Fridays: weekend acca + Around the Leagues in #hawk-weekend-accas
 //              Champions League days: matchweek acca (first night) + tonight's acca in #hawk-cl-accas
 //   9:10       #results – yesterday's picks and any accas that finished yesterday
+//   9:11       Mondays: #model-check – is Hawk's 70% really 70%?
 
 import { leagueDay, LEAGUES, COLOUR } from "./football";
 import { whyMenu, summaryEmbed } from "./reasoning";
@@ -32,6 +33,7 @@ export const DAILY_ORDER = Object.keys(LEAGUE_CHANNELS);
 const ACCA_MINUTE = 8;
 const SPECIAL_MINUTE = 9;
 const RESULTS_MINUTE = 10;
+const MODEL_CHECK_MINUTE = 11; // Mondays only
 
 const WEEKDAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "Europe/Dublin" });
 export const weekday = (d: Date) => WEEKDAY.format(d); // "Mon", "Tue", …
@@ -65,6 +67,7 @@ export function jobForRun(when: Date): string | null {
   if (minute === ACCA_MINUTE) return "ACCA";
   if (minute === SPECIAL_MINUTE) return "SPECIAL";
   if (minute === RESULTS_MINUTE) return "RESULTS";
+  if (minute === MODEL_CHECK_MINUTE) return weekday(when) === "Mon" ? "MODELCHECK" : null;
   return DAILY_ORDER[minute] ?? null;
 }
 
