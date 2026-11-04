@@ -27,7 +27,18 @@ export interface Match {
   status: string;
   homeTeam: Team;
   awayTeam: Team;
-  score?: { winner: "HOME_TEAM" | "AWAY_TEAM" | "DRAW" | null; fullTime?: { home: number | null; away: number | null } };
+  score?: {
+    winner: "HOME_TEAM" | "AWAY_TEAM" | "DRAW" | null;
+    duration?: string; // REGULAR, EXTRA_TIME or PENALTY_SHOOTOUT
+    fullTime?: { home: number | null; away: number | null };
+    regularTime?: { home: number | null; away: number | null }; // 90-minute score when a game went further
+  };
+}
+
+// Results for a date range only – small and quick, used to grade picks.
+export async function getResults(code: string, token: string, from: string, to: string): Promise<Match[]> {
+  const data = await getJson(`${API}/competitions/${code}/matches?dateFrom=${from}&dateTo=${to}`, token);
+  return data.matches ?? [];
 }
 interface Row {
   position: number;

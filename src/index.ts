@@ -5,6 +5,8 @@
 import { leagueDay, tableEmbed, formEmbed, predictEmbed } from "./football";
 import { whyMenu, whyButton, parseWhy, explainMatch } from "./reasoning";
 import { runLeaguePost, runAccaPost, jobForRun } from "./daily";
+import { runResultsPost, hasPending } from "./results";
+import { dublinDate } from "./discord";
 
 export interface Env {
   DISCORD_PUBLIC_KEY: string;
@@ -59,6 +61,14 @@ async function finishReply(interaction: any, data: unknown): Promise<void> {
 
 function option(interaction: any, name: string): string | undefined {
   return interaction.data.options?.find((o: any) => o.name === name)?.value;
+}
+
+// Grades yesterday, and re-grades the day before if any of its games hadn't finished.
+async function runDailyResults(env: Env, when: Date) {
+  const yesterday = dublinDate(new Date(when.getTime() - 864e5));
+  const dayBefore = dublinDate(new Date(when.getTime() - 2 * 864e5));
+  if (await hasPending(env, dayBefore)) await runResultsPost(env, dayBefore);
+  return runResultsPost(env, yesterday);
 }
 
 export default {
@@ -135,8 +145,14 @@ export default {
         // Admin-only: run one league's 9am post (or the acca) now, for testing.
         case "daily-post": {
           const league = option(interaction, "league") ?? "PL";
+          const today = dublinDate(new Date()), yesterday = dublinDate(new Date(Date.now() - 864e5));
+          const job =
+            league === "ACCA" ? runAccaPost(env)
+            : league === "RESULTS" ? runResultsPost(env, yesterday)
+            : league === "RESULTS_TODAY" ? runResultsPost(env, today)
+            : runLeaguePost(env, league);
           ctx.waitUntil(
-            (league === "ACCA" ? runAccaPost(env) : runLeaguePost(env, league))
+            job
               .then((summary) => finishReply(interaction, { content: summary }))
               .catch((err) => finishReply(interaction, { content: `⚠️ Daily post failed: ${err.message}` })),
           );
@@ -169,6 +185,10 @@ export default {
     const when = new Date(controller.scheduledTime);
     const job = jobForRun(when);
     if (!job) return;
-    ctx.waitUntil((job === "ACCA" ? runAccaPost(env, when) : runLeaguePost(env, job, when)).then(() => {}));
+    const run =
+      job === "ACCA" ? runAccaPost(env, when)
+      : job === "RESULTS" ? runDailyResults(env, when)
+      : runLeaguePost(env, job, when);
+    ctx.waitUntil(run.then(() => {}));
   },
 };

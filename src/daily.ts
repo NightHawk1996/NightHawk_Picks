@@ -2,6 +2,7 @@
 // processing allowance and the football data rate limit:
 //   9:00–9:06  one league each – fixtures, bet builders, reasoning summary, picks saved
 //   9:08       Hawk's Acca, built from the picks saved by the league runs
+//   9:10       #results – yesterday's picks graded
 
 import { leagueDay, LEAGUES, COLOUR } from "./football";
 import { whyMenu, summaryEmbed } from "./reasoning";
@@ -27,6 +28,7 @@ export const LEAGUE_CHANNELS: Record<string, string> = {
 };
 export const DAILY_ORDER = Object.keys(LEAGUE_CHANNELS);
 const ACCA_MINUTE = 8;
+const RESULTS_MINUTE = 10;
 
 const HOUR = new Intl.DateTimeFormat("en-IE", { hour: "numeric", hour12: false, timeZone: "Europe/Dublin" });
 
@@ -41,6 +43,7 @@ export function jobForRun(when: Date): string | null {
   if (!isNineInDublin(when)) return null;
   const minute = when.getUTCMinutes();
   if (minute === ACCA_MINUTE) return "ACCA";
+  if (minute === RESULTS_MINUTE) return "RESULTS";
   return DAILY_ORDER[minute] ?? null;
 }
 
