@@ -2,4 +2,10 @@ name = "hawk"
 main = "src/index.ts"
 compatibility_date = "2025-09-01"
 
-# DISCORD_PUBLIC_KEY is set with: npx wrangler secret put DISCORD_PUBLIC_KEY
+# Times are UTC. Both run every day; the code only posts on the one that is 9am in Dublin,
+# so it stays at 9am Irish time in summer and winter.
+[triggers]
+crons = ["0 8 * * *", "0 9 * * *"]
+
+# Secrets (set with: npx wrangler secret put NAME)
+#   DISCORD_PUBLIC_KEY, DISCORD_TOKEN, GUILD_ID, FOOTBALL_DATA_TOKEN

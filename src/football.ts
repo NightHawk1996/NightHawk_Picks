@@ -47,23 +47,28 @@ async function getJson(url: string, token: string): Promise<any> {
   return JSON.parse(text);
 }
 
-// Builds the /fixtures reply: the next 7 days for one competition, grouped by day.
-export async function fixturesEmbed(code: string, token: string, now = new Date()) {
+// Builds a fixtures embed for one competition, grouped by day.
+// /fixtures uses the next 7 days; the daily post uses the next 24 hours and
+// returns null when nothing is on, so empty channels don't get a post.
+export async function fixturesEmbed(code: string, token: string, now = new Date(), hours = 168) {
   const league = LEAGUES[code];
   if (!league) throw new Error("Unknown competition.");
 
-  const to = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
+  const to = new Date(now.getTime() + hours * 3600 * 1000);
   const data = await getJson(
     `${API}/competitions/${code}/matches?dateFrom=${ymd(now)}&dateTo=${ymd(to)}`,
     token,
   );
 
-  const upcoming: Match[] = (data.matches ?? []).filter(
-    (m: Match) => ["SCHEDULED", "TIMED", "POSTPONED"].includes(m.status) && new Date(m.utcDate) > now,
-  );
+  const upcoming: Match[] = (data.matches ?? []).filter((m: Match) => {
+    const kickOff = new Date(m.utcDate);
+    return ["SCHEDULED", "TIMED", "POSTPONED"].includes(m.status) && kickOff > now && kickOff <= to;
+  });
 
-  const title = `${league.emoji} ${league.name} – next 7 days`;
+  const daily = hours <= 24;
+  const title = daily ? `${league.emoji} ${league.name} – today's fixtures` : `${league.emoji} ${league.name} – next 7 days`;
   if (upcoming.length === 0) {
+    if (daily) return null;
     return { title, description: "No fixtures in the next 7 days.", color: COLOUR };
   }
 

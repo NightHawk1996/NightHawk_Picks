@@ -34,6 +34,11 @@ const commands = [
       },
     ],
   },
+  {
+    name: "daily-post",
+    description: "Run today's 9am fixtures post now (admin only)",
+    default_member_permissions: "0", // hidden from everyone except server admins
+  },
 ];
 
 const res = await fetch(

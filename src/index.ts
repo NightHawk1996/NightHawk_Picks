@@ -3,10 +3,13 @@
 // talk to Hawk), then reply.
 
 import { fixturesEmbed } from "./football";
+import { runDailyPost, isNineInDublin } from "./daily";
 
 export interface Env {
   DISCORD_PUBLIC_KEY: string;
   FOOTBALL_DATA_TOKEN: string;
+  DISCORD_TOKEN: string;
+  GUILD_ID: string;
 }
 
 const InteractionType = { PING: 1, APPLICATION_COMMAND: 2 } as const;
@@ -90,6 +93,16 @@ export default {
           );
           return reply({ type: ResponseType.DEFERRED_MESSAGE });
         }
+
+        // Admin-only: run the 9am post now, for testing.
+        case "daily-post": {
+          ctx.waitUntil(
+            runDailyPost(env)
+              .then((summary) => finishReply(interaction, { content: summary }))
+              .catch((err) => finishReply(interaction, { content: `⚠️ Daily post failed: ${err.message}` })),
+          );
+          return reply({ type: ResponseType.DEFERRED_MESSAGE, data: { flags: EPHEMERAL } });
+        }
       }
     }
 
@@ -97,5 +110,12 @@ export default {
       type: ResponseType.CHANNEL_MESSAGE,
       data: { content: "I don't know that command yet.", flags: EPHEMERAL },
     });
+  },
+
+  // Runs on the schedule in wrangler.toml.
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const when = new Date(controller.scheduledTime);
+    if (!isNineInDublin(when)) return;
+    ctx.waitUntil(runDailyPost(env, when).then(() => {}));
   },
 };
