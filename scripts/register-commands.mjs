@@ -9,29 +9,42 @@ if (!DISCORD_TOKEN || !DISCORD_APPLICATION_ID || !GUILD_ID) {
   process.exit(1);
 }
 
+const leagueOption = {
+  name: "league",
+  description: "Which competition (default: Premier League)",
+  type: 3, // string
+  required: false,
+  choices: [
+    { name: "Premier League", value: "PL" },
+    { name: "Championship", value: "ELC" },
+    { name: "La Liga", value: "PD" },
+    { name: "Serie A", value: "SA" },
+    { name: "Bundesliga", value: "BL1" },
+    { name: "Ligue 1", value: "FL1" },
+    { name: "Champions League", value: "CL" },
+    { name: "Eredivisie", value: "DED" },
+    { name: "Primeira Liga", value: "PPL" },
+  ],
+};
+
 const commands = [
   { name: "ping", description: "Check Hawk is awake" },
   {
     name: "fixtures",
-    description: "Upcoming fixtures for the next 7 days",
+    description: "Upcoming fixtures for the next 7 days, with form",
+    options: [leagueOption],
+  },
+  {
+    name: "table",
+    description: "Current league table, with form",
+    options: [leagueOption],
+  },
+  {
+    name: "form",
+    description: "A team's form, home and away record and recent results",
     options: [
-      {
-        name: "league",
-        description: "Which competition (default: Premier League)",
-        type: 3, // string
-        required: false,
-        choices: [
-          { name: "Premier League", value: "PL" },
-          { name: "Championship", value: "ELC" },
-          { name: "La Liga", value: "PD" },
-          { name: "Serie A", value: "SA" },
-          { name: "Bundesliga", value: "BL1" },
-          { name: "Ligue 1", value: "FL1" },
-          { name: "Champions League", value: "CL" },
-          { name: "Eredivisie", value: "DED" },
-          { name: "Primeira Liga", value: "PPL" },
-        ],
-      },
+      { name: "team", description: "Team name, e.g. Arsenal or Man City", type: 3, required: true },
+      leagueOption,
     ],
   },
   {

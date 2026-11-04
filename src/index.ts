@@ -2,7 +2,7 @@
 // Discord POSTs every interaction here. We check the signature (so only Discord can
 // talk to Hawk), then reply.
 
-import { fixturesEmbed } from "./football";
+import { fixturesEmbed, tableEmbed, formEmbed } from "./football";
 import { runDailyPost, isNineInDublin } from "./daily";
 
 export interface Env {
@@ -88,6 +88,27 @@ export default {
           const league = option(interaction, "league") ?? "PL";
           ctx.waitUntil(
             fixturesEmbed(league, env.FOOTBALL_DATA_TOKEN)
+              .then((embed) => finishReply(interaction, { embeds: [embed] }))
+              .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
+          );
+          return reply({ type: ResponseType.DEFERRED_MESSAGE });
+        }
+
+        case "table": {
+          const league = option(interaction, "league") ?? "PL";
+          ctx.waitUntil(
+            tableEmbed(league, env.FOOTBALL_DATA_TOKEN)
+              .then((embed) => finishReply(interaction, { embeds: [embed] }))
+              .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
+          );
+          return reply({ type: ResponseType.DEFERRED_MESSAGE });
+        }
+
+        case "form": {
+          const team = option(interaction, "team") ?? "";
+          const league = option(interaction, "league") ?? "PL";
+          ctx.waitUntil(
+            formEmbed(league, team, env.FOOTBALL_DATA_TOKEN)
               .then((embed) => finishReply(interaction, { embeds: [embed] }))
               .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
           );
