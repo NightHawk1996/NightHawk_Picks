@@ -113,100 +113,102 @@ const LAYOUT = [
 const HOW_IT_WORKS = [
   {
     title: "🦅 Welcome to NightHawk Picks",
-    description: `Hawk does the homework so you don't have to. Every day it gathers the numbers – form, conditions, matchups and prices – turns them into a chance for each outcome, then compares that with what the bookies are offering.
+    description: `Hawk is the bot behind this server. Every morning it studies the football, works out how likely each outcome is, and posts it in plain English – what's likely, how sure it is, and the lowest price worth taking.
 
-What you get is plain English: what's likely, how sure Hawk is, and whether the price is worth taking.
+Then it checks itself. Every pick is graded the next day, and every Monday Hawk reports whether its percentages are holding up. Nothing gets quietly forgotten.
 
-**Find your way around**
-⚽ {#premier-league} through to {#conference-league} – one channel per competition
-🏇 {#racecards} · {#going-reports} · {#racing-results}
-🏆 {#cheltenham-2027} · {#aintree-2027}
-🥊 {#ufc} · {#boxing} · {#fight-cards}
-🎟️ {#hawk-daily-accas} · {#results} · {#model-check}`,
+**⚽ Leagues covered**
+Premier League · Championship · La Liga · Serie A · Bundesliga · Ligue 1 · Champions League
+
+**🏇 Racing and 🥊 combat sports are on the way** – racing in time for Cheltenham (16–19 March) and Aintree (8–10 April).`,
   },
   {
-    title: "⚽ Football – what Hawk looks at",
-    description: `**Ratings** – each side has an attacking and a defensive score, built from the last two seasons and weighted towards recent matches.
+    title: "🧠 How Hawk makes a prediction",
+    description: `**1️⃣ Attack and defence ratings** – every team is rated on the goals it scores and concedes this season, allowing for who it played and where. Recent games count more.
 
-**Venue** – plenty of teams are a different animal at home. Their home and away splits feed in, carefully at first while the sample is small.
+**2️⃣ Home advantage** – built in from how home and away teams actually score in each league.
 
-**Who's missing** – absent first-choice players drag a team's score down and are left out of player markets.
+**3️⃣ Early-season caution** – with only a few games played, ratings are pulled towards average, so one freak result can't dominate.
 
-**The man in the middle** – each referee's booking rate shifts the cards numbers.
+**4️⃣ Expected goals** – the ratings give how many goals each side should score, and from that the chance of every scoreline.
 
-**Fixture load and weather** – a midweek European away day, a downpour or a gale all get factored in.
+**5️⃣ Every market from one grid** – win, draw, goals, both teams to score and builders all come from the same scoreline chances, so they always agree with each other.
 
-**The market** – bookmaker prices carry information Hawk can't see, so they're mixed into the final figure.
-
-**Keeping score** – once the final whistle goes, every pick is graded. Markets that keep underperforming get dialled back, so the percentages stay believable.`,
+**What Hawk can't see (yet):** injuries, team news, the referee, the weather or bookies' prices. When something big changes – a star striker out – use your own judgement.`,
   },
   {
-    title: "🏇 Racing – what Hawk looks at",
-    description: `**Recent runs** – the last few outings matter most, along with how long the horse has been off the track.
+    title: "📅 What gets posted, and when",
+    description: `**☀️ 9:00–9:06** – each league's games for today in its own channel, with form and Hawk's pick
+**🧩 9:00–9:06** – that league's bet builders in {#bet-builders}
+**🔍 9:00–9:06** – a short summary of why in {#hawk-reasoning}
+**🎟️ 9:08** – the daily acca in {#hawk-daily-accas} _(domestic leagues)_
+**🗓️ 9:09 Fridays** – the weekend acca and Around the Leagues in {#hawk-weekend-accas}
+**🇪🇺 9:09 Champions League days** – the matchweek acca and tonight's acca in {#hawk-cl-accas}
+**📈 9:10** – yesterday's picks graded in {#results}
+**🧪 9:11 Mondays** – the weekly accuracy check in {#model-check}
 
-**Ground, trip and track** – how each runner has handled today's going, today's distance and this course. Proven on soft? That counts. Never shown anything on heavy? That counts too.
-
-**Class and handicap mark** – up or down in grade, and is it racing off a mark it has won from before?
-
-**Yard and saddle** – how the trainer's horses are running right now, the jockey's form, and both of their records at the track.
-
-**Festival profiles** – at Cheltenham and Aintree, each runner is measured against the type of horse that has won that race before: age, weight carried, starting price and preparation.
-
-**The market** – prices are blended in, same as football.
-
-🌧️ Ground can change mid-meeting. When it does, an update goes up in {#going-reports} and Hawk re-rates the field.`,
+League channels, builders and accas are cleared each morning so only the current picks are up. The full record lives in {#results} and {#model-check}.`,
   },
   {
-    title: "🥊 Fights – what Hawk looks at",
-    description: `**The record** – not just the win-loss column, but the quality of opposition behind it.
+    title: "🃏 Reading Hawk's posts",
+    description: `**🎯 Arsenal 74% · Draw 19% · Spurs 8% → Arsenal ✅ · 2-0**
+Hawk's chance for each result, its pick, and the most likely score.
 
-**Finishing style** – does a fighter get it done by stoppage, submission or on the scorecards? That shapes the method and round predictions.
+**The traffic lights**
+✅ 70%+ strong · 🟡 55–69% only at the right price · ❌ under 55% a lean, not a bet
 
-**Size and shape** – age, height, reach, and orthodox v southpaw.
+**Form** – 🟢 win · 🟡 draw · 🔴 loss, last five games in that competition, latest on the right.
 
-**Ring rust and weight** – long lay-offs and changes of division are both flagged.
+**"Worth it at 6/5 or bigger"** – the break-even price. If your bookie offers less than this, the bet isn't paying enough for the risk. It's always rounded up to the next standard price, so taking it or bigger is never a losing bet on Hawk's numbers.
 
-**The market** – prices blended in.
-
-📅 Events are listed in {#fight-cards}; predictions appear in {#ufc} and {#boxing}.`,
+**🔍 Why?** – under every post. Pick a game and Hawk shows its full reasoning, visible only to you.`,
   },
   {
-    title: "🃏 Reading Hawk's cards",
-    description: `**The traffic lights**
-✅ 70% or higher – a strong lean
-🟡 55–69% – only if the price is right
-❌ Below 55% – leave it
+    title: "🧩 Bet builders",
+    description: `One builder per game, posted in {#bet-builders}, most likely first.
 
-**Two numbers side by side** – the bold figure is Hawk's estimate; the smaller one is what the bookies' price implies once their margin is stripped out.
+• Always built around the result – a win or a double chance
+• Every leg is a real pick on its own (55–90%) – no filler
+• No leg that's already implied by another
+• The whole builder lands at least 40% of the time
 
-**Confidence** – 🟢 high · 🟡 medium · 🔴 low. ⭐ marks a standout.
-
-**Form strings** – 🟢🟡🔴 for wins, draws and losses in football and fights; finishing positions in racing.
-
-**What each card covers**
-⚽ predicted score, goals markets, corners, bookings, referee, absentees and player picks
-🏇 going, distance and course record, yard and jockey form, festival-profile score
-🥊 winner, method and round`,
+**Priced as one bet, not leg by leg.** Legs from the same game are linked – a win and over 1.5 goals tend to go together – so Hawk works out the real chance of them all landing, the same way bookies price builders.`,
   },
   {
-    title: "🎟️ Accas, bankers and value",
-    description: `🔒 **Bankers** – the day's most probable selections, across every sport.
+    title: "🎟️ Accas",
+    description: `**Every acca follows the same rules:**
+• One leg per game, each rated **80% or more**
+• Straight wins first, then double chances, then other markets
+• Up to 6 legs – and at least 3, or no acca at all
+• A 🛡️ safer 4-leg version when the full one is under 30%
 
-🎟️ **Hawk's Acca** – posted in {#hawk-daily-accas}. Only legs Hawk rates at 80% or more make the cut. You'll always see the combined chance of the whole thing, plus a shorter 4-leg alternative when the full version is a stretch.
+**{#hawk-daily-accas}** – today's acca from the domestic leagues.
+**{#hawk-weekend-accas}** – posted Friday: the 🗓️ weekend acca (Friday night to Sunday) and 🌍 Around the Leagues, the single strongest pick from each league.
+**{#hawk-cl-accas}** – the 🇪🇺 matchweek acca across the whole Champions League week, and 🌙 tonight's acca on each match night.
 
-📐 **The acca maths, honestly** – chances multiply. Four 80% legs together come out at roughly 41%, so an acca is never as safe as its individual legs look. That's why the combined figure is always shown.
-
-💰 **Value** – flagged when Hawk's estimate is at least 3 points above the bookies'. The risk is still there; the price just favours you.
-
-🔢 **Minimum odds** – each pick lists the lowest price worth taking. Anything shorter and the bet isn't paying enough for the risk.`,
+📐 **The maths, honestly:** every leg has to land. Four 80% legs together come to about 41% – an acca is never as safe as its legs look. That's why the combined chance is always shown.`,
   },
   {
-    title: "⏰ The daily routine",
-    description: `☀️ **9am** – football predictions and racecards for the next 24 hours
-🌙 **Evening** – the day's racing results logged into Hawk's form book
-📈 **Morning** – yesterday's selections graded ✅ ❌ ➖ in {#results}
-🧪 **Monday** – the weekly accuracy report in {#model-check}
-🥊 **Fight week** – cards and predictions in the run-up to each event`,
+    title: "📈 Keeping Hawk honest",
+    description: `**{#results}** – every morning, everything from the day before: each pick with the final score, each builder and acca **leg by leg** with ✅ or ❌, and a tally.
+• Settled on the **90-minute score**, like the bookies
+• Postponed games are ➖ **void** and drop out of builders and accas
+• Games not finished in time show ⏳ and are re-checked the next morning
+
+**{#model-check}** – every Monday: when Hawk says 70%, does it land about 70% of the time? Each band is marked ✅ on target, ⚠️ too confident or 🔼 too cautious. It takes a few weeks of results before these numbers mean much.
+
+**{#hawk-reasoning}** – a running history of why Hawk made each day's picks.`,
+  },
+  {
+    title: "⌨️ Commands",
+    description: `Use these in {#bot-commands}:
+
+**/fixtures** – the next 7 days for any league, with form and predictions
+**/table** – the league table, with form
+**/form** – a team's form, home and away record and recent results
+**/predict** – Hawk's full prediction and bet builder for a team's next game
+
+Pick a league from the list, or leave it blank for the Premier League. Team names are flexible – \`spurs\`, \`man city\` and \`MCI\` all work.`,
   },
 ];
 
@@ -221,9 +223,9 @@ const RULES = [
 
 **3. No selling, no spam** – paid tipping services, affiliate links and self-promotion aren't allowed.
 
-**4. Right channel, right chat** – talk in {#general} and share slips in {#bet-slips}. Every other channel is kept for Hawk's posts.
+**4. Right channel, right chat** – talk in {#general}, share slips in {#bet-slips}, and use commands in {#bot-commands}. Every other channel is kept for Hawk's posts.
 
-**5. Your bets are your decision** – Hawk gives estimates, not guarantees or financial advice. What you stake is down to you.
+**5. Your bets are your decision** – Hawk gives estimates, not guarantees or financial advice. It can't see team news or injuries, and it gets things wrong – {#results} shows every miss. What you stake is down to you.
 
 🎲 **Staying in control**
 Gambling should be entertainment – never income, and never a way to win back what you've lost.
