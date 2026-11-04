@@ -3,6 +3,7 @@
 // inside Cloudflare's free processing allowance and the football data rate limit.
 
 import { leagueDay } from "./football";
+import { whyMenu, summaryEmbed } from "./reasoning";
 
 export interface DailyEnv {
   DISCORD_TOKEN: string;
@@ -67,13 +68,27 @@ export async function runLeaguePost(env: DailyEnv, code: string, now = new Date(
     if (!day.fixtures) {
       line = `💤 #${channelName} – no games today`;
     } else {
-      await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [day.fixtures] });
+      await discord(env, "POST", `/channels/${channelId}/messages`, {
+        embeds: [day.fixtures],
+        components: whyMenu(code, now, day.predictions, "fx"),
+      });
       line = `✅ #${channelName} – posted`;
       if (day.builders && builderId) {
-        await discord(env, "POST", `/channels/${builderId}/messages`, { embeds: [day.builders] });
+        await discord(env, "POST", `/channels/${builderId}/messages`, {
+          embeds: [day.builders],
+          components: whyMenu(code, now, day.predictions.filter((x) => x.p.builder), "bb"),
+        });
         line += ` · 🧩 ${day.builderCount} builder${day.builderCount === 1 ? "" : "s"}`;
       } else if (day.builders) {
         line += " · ⚠️ #bet-builders not found";
+      }
+      const reasoningId = idFor("hawk-reasoning");
+      const summary = summaryEmbed(code, day.predictions, day.ratings);
+      if (summary && reasoningId) {
+        await discord(env, "POST", `/channels/${reasoningId}/messages`, { embeds: [summary] });
+        line += " · 🔍 summary";
+      } else if (summary) {
+        line += " · ⚠️ #hawk-reasoning not found";
       }
     }
   } catch (err: any) {

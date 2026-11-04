@@ -2,7 +2,8 @@
 // Discord POSTs every interaction here. We check the signature (so only Discord can
 // talk to Hawk), then reply.
 
-import { fixturesEmbed, tableEmbed, formEmbed, predictEmbed } from "./football";
+import { leagueDay, tableEmbed, formEmbed, predictEmbed } from "./football";
+import { whyMenu, whyButton, parseWhy, explainMatch } from "./reasoning";
 import { runLeaguePost, leagueForRun } from "./daily";
 
 export interface Env {
@@ -13,7 +14,7 @@ export interface Env {
   BET_BUILDERS_CHANNEL_ID?: string;
 }
 
-const InteractionType = { PING: 1, APPLICATION_COMMAND: 2 } as const;
+const InteractionType = { PING: 1, APPLICATION_COMMAND: 2, MESSAGE_COMPONENT: 3 } as const;
 const ResponseType = { PONG: 1, CHANNEL_MESSAGE: 4, DEFERRED_MESSAGE: 5 } as const;
 const EPHEMERAL = 64; // reply only the person who ran the command can see
 
@@ -87,9 +88,10 @@ export default {
 
         case "fixtures": {
           const league = option(interaction, "league") ?? "PL";
+          const now = new Date();
           ctx.waitUntil(
-            fixturesEmbed(league, env.FOOTBALL_DATA_TOKEN, new Date(), 168, env.BET_BUILDERS_CHANNEL_ID)
-              .then((embed) => finishReply(interaction, { embeds: [embed] }))
+            leagueDay(league, env.FOOTBALL_DATA_TOKEN, now, 168, env.BET_BUILDERS_CHANNEL_ID)
+              .then((day) => finishReply(interaction, { embeds: [day.fixtures], components: whyMenu(league, now, day.predictions, "fx") }))
               .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
           );
           return reply({ type: ResponseType.DEFERRED_MESSAGE });
@@ -119,9 +121,11 @@ export default {
         case "predict": {
           const team = option(interaction, "team") ?? "";
           const league = option(interaction, "league") ?? "PL";
+          const now = new Date();
           ctx.waitUntil(
-            predictEmbed(league, team, env.FOOTBALL_DATA_TOKEN)
-              .then((embed) => finishReply(interaction, { embeds: [embed] }))
+            predictEmbed(league, team, env.FOOTBALL_DATA_TOKEN, now)
+              .then(({ why, ...embed }) =>
+                finishReply(interaction, { embeds: [embed], components: whyButton(league, now, why.homeId, why.awayId) }))
               .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
           );
           return reply({ type: ResponseType.DEFERRED_MESSAGE });
@@ -137,6 +141,19 @@ export default {
           );
           return reply({ type: ResponseType.DEFERRED_MESSAGE, data: { flags: EPHEMERAL } });
         }
+      }
+    }
+
+    // 🔍 Why? menus and buttons – the reasoning only the person who asked can see.
+    if (interaction.type === InteractionType.MESSAGE_COMPONENT) {
+      const why = parseWhy(interaction.data.custom_id, interaction.data.values);
+      if (why) {
+        ctx.waitUntil(
+          explainMatch(why.code, env.FOOTBALL_DATA_TOKEN, why.postedAt, why.homeId, why.awayId)
+            .then((embed) => finishReply(interaction, { embeds: [embed] }))
+            .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
+        );
+        return reply({ type: ResponseType.DEFERRED_MESSAGE, data: { flags: EPHEMERAL } });
       }
     }
 

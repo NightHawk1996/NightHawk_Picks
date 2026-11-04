@@ -84,6 +84,7 @@ const LAYOUT = [
     channels: [
       { name: "hawk-acca", topic: "Hawk's acca – the strongest legs across every sport" },
       { name: "bet-builders", topic: "Hawk's bet builders – legs from one match, priced together" },
+      { name: "hawk-reasoning", topic: "Daily summary of why Hawk made today's picks – use 🔍 Why? on any post for the full reasoning" },
       { name: "results", topic: "Yesterday's legs – ✅ won · ❌ lost · ➖ void" },
       { name: "model-check", topic: "Every Monday – how honest were Hawk's numbers?" },
     ],

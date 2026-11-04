@@ -15,14 +15,14 @@ export const LEAGUES: Record<string, { name: string; emoji: string }> = {
 };
 
 const API = "https://api.football-data.org/v4";
-const COLOUR = 0xf2a900;
+export const COLOUR = 0xf2a900;
 const HISTORY_DAYS = 120; // results used for form and ratings (older games barely count anyway)
 const AHEAD_DAYS = 14; // fixtures fetched ahead
 const DOT = { W: "🟢", D: "🟡", L: "🔴" } as const;
 type Result = keyof typeof DOT;
 
-interface Team { id: number; name: string; shortName?: string; tla?: string }
-interface Match {
+export interface Team { id: number; name: string; shortName?: string; tla?: string }
+export interface Match {
   utcDate: string;
   status: string;
   homeTeam: Team;
@@ -45,8 +45,8 @@ interface Row {
 const DAY = 24 * 3600 * 1000;
 const DAY_LABEL = new Intl.DateTimeFormat("en-IE", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Dublin" });
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
-const teamName = (t: Team) => t.shortName || t.name;
-const league = (code: string) => {
+export const teamName = (t: Team) => t.shortName || t.name;
+export const league = (code: string) => {
   const l = LEAGUES[code];
   if (!l) throw new Error("Unknown competition.");
   return l;
@@ -78,7 +78,7 @@ async function getJson(url: string, token: string): Promise<any> {
 
 // One request gets recent results (for form and ratings) and upcoming fixtures.
 // Every command uses the same window, so they share the cache.
-async function getMatches(code: string, token: string, now: Date): Promise<Match[]> {
+export async function getMatches(code: string, token: string, now: Date): Promise<Match[]> {
   const from = new Date(now.getTime() - HISTORY_DAYS * DAY);
   const to = new Date(now.getTime() + AHEAD_DAYS * DAY);
   const data = await getJson(`${API}/competitions/${code}/matches?dateFrom=${ymd(from)}&dateTo=${ymd(to)}`, token);
@@ -131,9 +131,9 @@ export function formFor(teamId: number, matches: Match[], before: Date): Result[
     });
 }
 
-const dots = (form: Result[]) => (form.length ? form.map((r) => DOT[r]).join("") : "–");
+export const dots = (form: Result[]) => (form.length ? form.map((r) => DOT[r]).join("") : "–");
 
-function fitLines(blocks: string[], limit = 3900, more = "_…more not shown_"): string {
+export function fitLines(blocks: string[], limit = 3900, more = "_…more not shown_"): string {
   let out = "";
   for (const b of blocks) {
     if (out.length + b.length > limit) return out + more;
@@ -147,7 +147,7 @@ function fitLines(blocks: string[], limit = 3900, more = "_…more not shown_"):
 // One pass works out both the league post and the bet builders, so the data is
 // only fetched and processed once.
 // ---------------------------------------------------------------------------
-type Predicted = Prediction & { homeName: string; awayName: string };
+export type Predicted = Prediction & { homeName: string; awayName: string };
 
 export async function leagueDay(code: string, token: string, now = new Date(), hours = 168, builderChannelId?: string) {
   const builderLink = builderChannelId ? `<#${builderChannelId}>` : "#bet-builders";
@@ -164,8 +164,9 @@ export async function leagueDay(code: string, token: string, now = new Date(), h
   const daily = hours <= 24;
   const title = `${l.emoji} ${l.name} – ${daily ? "today's fixtures" : "next 7 days"}`;
   if (upcoming.length === 0) {
-    if (daily) return { fixtures: null, builders: null, builderCount: 0 };
-    return { fixtures: { title, description: "No fixtures in the next 7 days.", color: COLOUR }, builders: null, builderCount: 0 };
+    const empty = { builders: null, builderCount: 0, predictions: [], matches, ratings, league: l };
+    if (daily) return { fixtures: null, ...empty };
+    return { fixtures: { title, description: "No fixtures in the next 7 days.", color: COLOUR }, ...empty };
   }
 
   const PREDICT_LIMIT = 12; // keeps each run inside Cloudflare's free processing allowance
@@ -197,7 +198,7 @@ export async function leagueDay(code: string, token: string, now = new Date(), h
     footer: { text: "Form: last 5, latest on the right · Times in your time zone · Powered by Hawk 🦅" },
   };
 
-  return { fixtures, builders: buildersEmbed(l, withBuilder, daily), builderCount: withBuilder.length };
+  return { fixtures, builders: buildersEmbed(l, withBuilder, daily), builderCount: withBuilder.length, predictions, matches, ratings, league: l };
 }
 
 // The #bet-builders post: one builder per match, most likely first.
@@ -324,12 +325,12 @@ export async function formEmbed(code: string, query: string, token: string, now 
 // ---------------------------------------------------------------------------
 // Predictions
 // ---------------------------------------------------------------------------
-const predictMatch = (ratings: ReturnType<typeof buildRatings>, m: Match): Predicted => {
+export const predictMatch = (ratings: ReturnType<typeof buildRatings>, m: Match): Predicted => {
   const homeName = teamName(m.homeTeam), awayName = teamName(m.awayTeam);
   return { ...predict(ratings, m.homeTeam, m.awayTeam, homeName, awayName), homeName, awayName };
 };
 
-const pickOf = (p: Predicted) => {
+export const pickOf = (p: Predicted) => {
   const options = [
     { label: p.homeName, p: p.home },
     { label: "Draw", p: p.draw },
@@ -390,8 +391,10 @@ export async function predictEmbed(code: string, query: string, token: string, n
     },
   ];
 
+  const why = { homeId: next.homeTeam.id, awayId: next.awayTeam.id };
   const caution = p.dataGames < 6 ? "\n⚠️ _Early days – fewer than 6 games to rate these teams on, so treat with care._" : "";
   return {
+    why,
     title: `🔮 ${p.homeName} v ${p.awayName}`,
     description: `${l.emoji} ${l.name} · <t:${kickOff}:F> (<t:${kickOff}:R>)${caution}`,
     color: COLOUR,
