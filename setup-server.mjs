@@ -48,6 +48,7 @@ const LAYOUT = [
     readOnly: true,
     channels: [
       { name: "premier-league" },
+      { name: "championship" },
       { name: "la-liga" },
       { name: "serie-a" },
       { name: "bundesliga" },
@@ -345,6 +346,21 @@ async function main() {
       ids[ch.name] = channel.id;
     }
   }
+
+  // Put every category and channel in the order listed in LAYOUT, so new channels
+  // slot into the right place instead of landing at the bottom.
+  const order = [];
+  let pos = 0;
+  existing = await api("GET", `/guilds/${GUILD_ID}/channels`);
+  for (const [catIndex, cat] of LAYOUT.entries()) {
+    const category = existing.find((c) => c.type === 4 && c.name === cat.name);
+    if (category) order.push({ id: category.id, position: catIndex });
+    for (const ch of cat.channels) {
+      if (ids[ch.name]) order.push({ id: ids[ch.name], position: pos++ });
+    }
+  }
+  await api("PATCH", `/guilds/${GUILD_ID}/channels`, order);
+  console.log("\n↕ Channel order updated");
 
   // Replace {#channel-name} with a clickable channel mention
   const linkify = (text) =>
