@@ -103,6 +103,8 @@ const commands = [
           { name: "Results – today so far", value: "RESULTS_TODAY" },
           { name: "Model check – last week (preview)", value: "MODELCHECK" },
           { name: "Racing – collect today's cards & results now", value: "RACING" },
+          { name: "Racing – post today's #racecards", value: "RACECARDS" },
+          { name: "Racing – post today's #racing-results", value: "RACERESULTS" },
         ],
       },
     ],

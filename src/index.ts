@@ -215,6 +215,8 @@ export default {
             : league === "MODELCHECK" ? runModelCheck(env, new Date(), false)
             : league === "RESULTS_TODAY" ? runResultsPost(env, today)
             : league === "RACING" ? runRacingNow(env)
+            : league === "RACECARDS" ? runRacingTask(env, "POST_CARDS")
+            : league === "RACERESULTS" ? runRacingTask(env, "POST_RESULTS")
             : runLeaguePost(env, league, new Date(), true);
           ctx.waitUntil(
             job

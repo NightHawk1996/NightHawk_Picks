@@ -3,6 +3,7 @@
 //   07:40 UTC  today's racecards (final declarations, non-runners)
 //   21:40 UTC  today's results
 //   21:41 UTC  tomorrow's racecards
+// Posting (src/racing-posts.ts): 07:41 UTC #racecards, 21:42 UTC #racing-results
 // One request per run, so the free plan's limit of 1 request a second is never close.
 // Stored for 400 days: racecards:YYYY-MM-DD and raceresults:YYYY-MM-DD.
 
@@ -18,13 +19,15 @@ const BASE = "https://api.theracingapi.com";
 const KEEP_SECONDS = 400 * 86400;
 const REGIONS = new Set(["GB", "IRE"]);
 
-export type RacingTask = "CARDS_TODAY" | "RESULTS" | "CARDS_TOMORROW";
+export type RacingTask = "CARDS_TODAY" | "RESULTS" | "CARDS_TOMORROW" | "POST_CARDS" | "POST_RESULTS";
 
 export function racingTaskForRun(when: Date): RacingTask | null {
   const h = when.getUTCHours(), m = when.getUTCMinutes();
   if (h === 7 && m === 40) return "CARDS_TODAY";
+  if (h === 7 && m === 41) return "POST_CARDS";
   if (h === 21 && m === 40) return "RESULTS";
   if (h === 21 && m === 41) return "CARDS_TOMORROW";
+  if (h === 21 && m === 42) return "POST_RESULTS";
   return null;
 }
 
@@ -89,6 +92,16 @@ export async function collectResults(env: RacingEnv, now = new Date()): Promise<
 }
 
 export async function runRacingTask(env: RacingEnv, task: RacingTask, now = new Date()): Promise<string> {
+  if (task === "POST_CARDS" || task === "POST_RESULTS") {
+    const { postRacecards, postRaceResults } = await import("./racing-posts");
+    try {
+      return task === "POST_CARDS" ? await postRacecards(env, dublinDate(now)) : await postRaceResults(env, dublinDate(now));
+    } catch (err: any) {
+      const line = `⚠️ Racing post (${task === "POST_CARDS" ? "#racecards" : "#racing-results"}): ${err.message}`;
+      await log(env, await getChannels(env), line);
+      return line;
+    }
+  }
   const ch = await getChannels(env);
   let line: string;
   try {
