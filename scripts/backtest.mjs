@@ -12,6 +12,7 @@
 import { writeFileSync } from "node:fs";
 import { buildRatings, predict } from "../src/model.ts";
 import { parseCsv, seasonCode, seasonLabel } from "../src/csv.ts";
+import { buildCountRatings, expectedCounts, setPieceLegs, gradeSetPiece, countDist, totalDist, over } from "../src/setpieces.ts";
 
 const LEAGUES = { PL: ["E0", "Premier League"], ELC: ["E1", "Championship"], PD: ["SP1", "La Liga"], SA: ["I1", "Serie A"], BL1: ["D1", "Bundesliga"], FL1: ["F1", "Ligue 1"] };
 const VALUE_EDGE = 0.05; // Hawk at least 5 points above the bookies' (margin-free) chance
@@ -24,6 +25,8 @@ console.log(`Backtest: ${seasonLabel(last)} and ${seasonLabel(current)} so far (
 
 // Every spot where Hawk and the bookies disagree, for the "where's the edge?" search.
 const spots = [];
+// Corners and cards calibration, and whether knowing the referee helps.
+const sp = { corners: Object.fromEntries(BANDS.map(([, l]) => [l, [0, 0, 0]])), cards: Object.fromEntries(BANDS.map(([, l]) => [l, [0, 0, 0]])), spread: { corners: [], cards: [] }, ref: { games: 0, withRef: 0, without: 0 } };
 const summary = { generated: now.toISOString(), seasons: [last, current], valueEdge: VALUE_EDGE, leagues: {}, bands: Object.fromEntries(BANDS.map(([, l]) => [l, [0, 0, 0]])) };
 
 for (const [code, [div, name]] of Object.entries(LEAGUES)) {
@@ -43,7 +46,12 @@ for (const [code, [div, name]] of Object.entries(LEAGUES)) {
     const today = [];
     while (i < rows.length && rows[i].r[0] === day) today.push(rows[i++]);
     if (today[0].season === warmUp) continue;
-    const ratings = buildRatings(rows.slice(0, i - today.length).map(asMatch), new Date(`${day}T12:00:00Z`));
+    const before = rows.slice(0, i - today.length), dayDate = new Date(`${day}T12:00:00Z`);
+    const ratings = buildRatings(before.map(asMatch), dayDate);
+    const cornerGames = before.filter(({ r }) => r[5] != null && r[6] != null).map(({ r }) => ({ date: r[0], home: r[1], away: r[2], hv: r[5], av: r[6] }));
+    const cardGames = before.filter(({ r }) => r[7] != null && r[8] != null).map(({ r }) => ({ date: r[0], home: r[1], away: r[2], hv: r[7] + (r[9] ?? 0), av: r[8] + (r[10] ?? 0), ref: r[11] || undefined }));
+    const cr = cornerGames.length > 60 ? buildCountRatings(cornerGames, dayDate) : null;
+    const kr = cardGames.length > 60 ? buildCountRatings(cardGames, dayDate, true) : null;
     for (const { r, season } of today) {
       const [, home, away, hg, ag, , , , , , , , oh, od, oa, mh, md, ma, ov, un, mov, mun] = r;
       const when = season === current ? "this" : season === last ? "last" : "find";
@@ -60,6 +68,28 @@ for (const [code, [div, name]] of Object.entries(LEAGUES)) {
         const band = BANDS.find(([lo]) => leg.p >= lo);
         const t = summary.bands[band[1]];
         t[0]++; t[1] += leg.p; if (leg.test(hg, ag)) t[2]++;
+      }
+
+      // Corners and cards (only where the file has the stats)
+      const [, , , , , hc, ac, hy, ay, hrd, ard, ref] = r;
+      if (scored && cr && kr && hc != null && ac != null && hy != null && ay != null) {
+        const hk = hy + (hrd ?? 0), ak = ay + (ard ?? 0);
+        const legs = setPieceLegs(expectedCounts(cr, home, away), cr.spread, expectedCounts(kr, home, away, ref || undefined), kr.spread, home, away);
+        for (const leg of legs) {
+          if (leg.p < 0.5) continue;
+          const t = sp[leg.spec.t][BANDS.find(([lo]) => leg.p >= lo)[1]];
+          t[0]++; t[1] += leg.p; if (gradeSetPiece(leg.spec, hc, ac, hk, ak)) t[2]++;
+        }
+        if (when !== "find") { sp.spread.corners.push(cr.spread); sp.spread.cards.push(kr.spread); }
+        // Referee: cards over 3.5 with and without the referee – lower "surprise" score = better
+        if (ref && kr.refs.has(ref)) {
+          const pOver = (e) => Math.min(0.999, Math.max(0.001, over(totalDist(countDist(e.home, kr.spread), countDist(e.away, kr.spread)), 3.5)));
+          const happened = hk + ak > 3.5;
+          const surprise = (q) => -Math.log(happened ? q : 1 - q);
+          sp.ref.games++;
+          sp.ref.withRef += surprise(pOver(expectedCounts(kr, home, away, ref)));
+          sp.ref.without += surprise(pOver(expectedCounts(kr, home, away)));
+        }
       }
 
       // Against the bookies (average pre-match odds, margin removed)
@@ -100,6 +130,21 @@ console.log("\nIs Hawk's 70% really 70%? (every market, 50%+ legs)");
 for (const [label, [n, sumP, won]] of Object.entries(summary.bands)) {
   if (n) console.log(`  ${label.padEnd(7)} ${String(n).padStart(6)} legs · landed ${Math.round((100 * won) / n)}% (said ${Math.round((100 * sumP) / n)}%)`);
 }
+// Corners and cards
+const avg = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 1);
+for (const [kind, name] of [["corners", "Corners"], ["cards", "Cards"]]) {
+  console.log(`\n${name} – is Hawk's 70% really 70%? (50%+ legs · extra variation measured at ${avg(sp.spread[kind]).toFixed(3)})`);
+  const rowsOut = Object.entries(sp[kind]).filter(([, t]) => t[0]);
+  if (!rowsOut.length) console.log("  No corners/cards data in these files.");
+  for (const [label, [n, sumP, won]] of rowsOut) console.log(`  ${label.padEnd(7)} ${String(n).padStart(6)} legs · landed ${Math.round((100 * won) / n)}% (said ${Math.round((100 * sumP) / n)}%)`);
+}
+if (sp.ref.games) {
+  const gain = (100 * (sp.ref.without - sp.ref.withRef)) / sp.ref.without;
+  const better = gain >= 0.5; // must be a real improvement, not rounding
+  console.log(`\nReferee effect (cards over 3.5, ${sp.ref.games} games with a known referee): ${better ? `✅ helps – predictions ${gain.toFixed(1)}% sharper with the referee` : "❌ doesn't help – Hawk will leave it out"}`);
+} else console.log("\nReferee effect: no referee data in these files.");
+summary.setpieces = { corners: sp.corners, cards: sp.cards, spread: { corners: avg(sp.spread.corners), cards: avg(sp.spread.cards) }, ref: sp.ref };
+
 // ---------------------------------------------------------------------------
 // Where's the edge? Each rule is FOUND on one full season and CHECKED on the next, which the
 // search never saw – then this season so far is shown as a live check. To count, a rule must
