@@ -37,6 +37,7 @@ export const LEAGUE_CHANNELS: Record<string, string> = {
   CL: "champions-league",
 };
 export const DAILY_ORDER = Object.keys(LEAGUE_CHANNELS);
+const SINGLES_MINUTE = 7; // NAP, singles, double and treble – after the league runs
 const ACCA_MINUTE = 8;
 const SPECIAL_MINUTE = 9;
 const RESULTS_MINUTE = 10;
@@ -97,6 +98,7 @@ export async function runHistoryImport(env: DailyEnv, code: string, back: 0 | 1,
 export function jobForRun(when: Date): string | null {
   if (!isNineInDublin(when)) return null;
   const minute = when.getUTCMinutes();
+  if (minute === SINGLES_MINUTE) return "SINGLES";
   if (minute === ACCA_MINUTE) return "ACCA";
   if (minute === SPECIAL_MINUTE) return "SPECIAL";
   if (minute === RESULTS_MINUTE) return "RESULTS";

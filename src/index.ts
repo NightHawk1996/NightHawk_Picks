@@ -9,6 +9,7 @@ import { whichLeague } from "./teams";
 import { loadTrends, raceChoices, trendsEmbed } from "./trends";
 import { loadSetPieceRatings } from "./setpiece-live";
 import { whyMenu, whyButton, parseWhy, explainMatch } from "./reasoning";
+import { runSinglesPost } from "./singles";
 import { racingTaskForRun, runRacingTask, runRacingNow } from "./racing";
 import { runLeaguePost, runAccaPost, runWeekendPost, runChampionsLeaguePost, runSpecialPosts, jobForRun, historyTaskForRun, runHistoryImport, DAILY_ORDER } from "./daily";
 import { runResultsPost, hasPending } from "./results";
@@ -43,7 +44,8 @@ async function callNext(env: Env, token: string, jobs: string[]) {
   await env.SELF!.fetch(`https://hawk.internal/internal/run?jobs=${jobs.join(",")}`, { method: "POST", headers: { "x-hawk-token": token } });
 }
 async function runNamedJob(env: Env, job: string, now: Date): Promise<string> {
-  return job === "ACCA" ? runAccaPost(env, now)
+  return job === "SINGLES" ? runSinglesPost(env, now)
+    : job === "ACCA" ? runAccaPost(env, now)
     : job === "SPECIAL" ? runSpecialPosts(env, now)
     : runLeaguePost(env, job, now);
 }
@@ -247,6 +249,7 @@ export default {
           const resultsDay = dublinDate(new Date(Date.now() - daysAgo * 864e5));
           const job =
             league === "ACCA" ? runAccaPost(env)
+            : league === "SINGLES" ? runSinglesPost(env)
             : league === "WEEKEND" ? runWeekendPost(env)
             : league === "CLACCAS" ? runChampionsLeaguePost(env, new Date(), true)
             : league === "RESULTS" ? runResultsPost(env, resultsDay)
@@ -255,8 +258,8 @@ export default {
             : league === "RACING" ? runRacingNow(env)
             : league === "RACECARDS" ? runRacingTask(env, "POST_CARDS")
             : league === "RACERESULTS" ? runRacingTask(env, "POST_RESULTS")
-            : league === "EVERYTHING" ? startChain(env, [...DAILY_ORDER, "ACCA", "SPECIAL"]).then(() =>
-                `🔁 Reposting today's league posts, bet builders and accas – one step every few seconds, about 1–2 minutes in all. Each step logs to #bot-log as it finishes.`)
+            : league === "EVERYTHING" ? startChain(env, [...DAILY_ORDER, "SINGLES", "ACCA", "SPECIAL"]).then(() =>
+                `🔁 Reposting today's league posts, bet builders, NAP & singles, and accas – one step every few seconds, about 1–2 minutes in all. Each step logs to #bot-log as it finishes.`)
             : runLeaguePost(env, league, new Date(), true);
           ctx.waitUntil(
             job
@@ -304,7 +307,8 @@ export default {
     const job = jobForRun(when);
     if (!job) return;
     const run =
-      job === "ACCA" ? runAccaPost(env, when)
+      job === "SINGLES" ? runSinglesPost(env, when)
+      : job === "ACCA" ? runAccaPost(env, when)
       : job === "SPECIAL" ? runSpecialPosts(env, when)
       : job === "MODELCHECK" ? runModelCheck(env, when)
       : job.startsWith("REGRADE:") ? regrade(env, when, Number(job.split(":")[1]))

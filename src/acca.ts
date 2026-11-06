@@ -73,6 +73,10 @@ export const ACCA_NAMES: Record<AccaKind, string> = {
   around: "🌍 Around the Leagues",
   clweek: "🇪🇺 Champions League Matchweek Acca",
   clnight: "🌙 Tonight's Champions League Acca",
+  nap: "⭐ Hawk's NAP",
+  singles: "🎯 Hawk's Singles",
+  double: "✌️ Hawk's Double",
+  treble: "🎲 Hawk's Treble",
 };
 
 export function accaTitle(kind: AccaKind, acca: StoredAcca | null, now: Date) {

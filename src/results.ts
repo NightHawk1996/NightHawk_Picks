@@ -125,7 +125,7 @@ export async function gradeDay(env: ResultsEnv, date: string) {
   }
 
   // The accas – daily, weekend, around the leagues, Champions League
-  const ORDER = ["daily", "clnight", "clweek", "weekend", "around"];
+  const ORDER = ["nap", "singles", "double", "treble", "daily", "clnight", "clweek", "weekend", "around"];
   const accaMarks: string[] = [];
   for (const acca of accas.sort((x, y) => ORDER.indexOf(x.kind ?? "daily") - ORDER.indexOf(y.kind ?? "daily"))) {
     const kind = acca.kind ?? "daily";
@@ -134,6 +134,17 @@ export async function gradeDay(env: ResultsEnv, date: string) {
       return { ...x, f, o: legOutcome(f, x.spec) };
     });
     for (const x of legs) items.push({ kind: "leg", p: x.p, outcome: x.o, code: x.code });
+    // Singles are separate bets – each graded on its own, no combined result
+    if (kind === "singles") {
+      const won = legs.filter((x) => x.o === "won").length, settled = legs.filter((x) => x.o === "won" || x.o === "lost").length;
+      accaMarks.push(`🎯 ${won}/${settled}`);
+      embeds.push({
+        title: `${ACCA_NAMES.singles} – ${dateLabel(date)}`,
+        description: `**${won} of ${settled}** landed\n\n` + legs.map((x) => `${MARK[x.o]} ${scoreLine(x, x.f)} · ${x.label} ${pct(x.p)}`).join("\n"),
+        color: COLOUR,
+      });
+      continue;
+    }
     const outcome = combine(legs.map((x) => x.o));
     items.push({ kind: "acca", p: acca.p, outcome });
     const name = ACCA_NAMES[kind];

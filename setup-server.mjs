@@ -82,6 +82,10 @@ const LAYOUT = [
     name: "🎯 Picks",
     readOnly: true,
     channels: [
+      { name: "hawk-nap", topic: "⭐ The NAP – Hawk's most confident win of the day" },
+      { name: "hawk-singles", topic: "🎯 Today's straight wins Hawk rates at 55%+, most likely first" },
+      { name: "hawk-doubles", topic: "✌️ The two most likely wins of the day together" },
+      { name: "hawk-trebles", topic: "🎲 The three most likely wins of the day together" },
       { name: "hawk-daily-accas", from: "hawk-acca", topic: "Today's acca – the strongest legs from the domestic leagues" },
       { name: "hawk-weekend-accas", topic: "Posted Fridays – the weekend acca and Around the Leagues" },
       { name: "hawk-cl-accas", topic: "Champions League – the matchweek acca and tonight's acca" },
@@ -145,11 +149,12 @@ Premier League · Championship · La Liga · Serie A · Bundesliga · Ligue 1 ·
     description: `**☀️ 9:00–9:06** – each league's games for today in its own channel, with form and Hawk's pick
 **🧩 9:00–9:06** – that league's bet builders in {#bet-builders}
 **🔍 9:00–9:06** – a short summary of why in {#hawk-reasoning}
+**⭐ 9:07** – the NAP in {#hawk-nap}, plus {#hawk-singles}, {#hawk-doubles} and {#hawk-trebles}
 **🎟️ 9:08** – the daily acca in {#hawk-daily-accas} _(domestic leagues)_
 **🗓️ 9:09 Fridays** – the weekend acca and Around the Leagues in {#hawk-weekend-accas}
 **🇪🇺 9:09 Champions League days** – the matchweek acca and tonight's acca in {#hawk-cl-accas}
 **📈 9:10** – yesterday's picks graded in {#results}
-**🧪 9:18 Tuesdays** – the weekly accuracy check in {#model-check} _(Tuesday, so the weekend's corners and cards are in)_
+**🧪 9:18 Tuesdays** – the weekly accuracy check in {#model-check}
 
 League channels, builders and accas are cleared each morning so only the current picks are up. The full record lives in {#results} and {#model-check}.`,
   },
@@ -164,6 +169,8 @@ Hawk's chance for each result, the bookies' chance in brackets (their margin tak
 **Form** – 🟢 win · 🟡 draw · 🔴 loss, last five games in that competition, latest on the right.
 
 **Hawk's fair price** – the odds that match Hawk's chance, e.g. 58% → 8/11. It's what the price would be if Hawk is right.
+
+**💷 Bookie prices** – next to Hawk's fair price you'll see the best bookie price, e.g. _bet365 **4/5**_, and for accas the top 3 bookies that price every leg. bet365 and Paddy Power cover every market; Sky Bet, William Hill, BoyleSports and others cover results and goals. Prices are from the morning and move, so check before you bet.
 
 **📊 Bookies' price bigger than Hawk's** – flagged when the bookies offer, say, Evens and Hawk's fair price is 8/11. Hawk has been tested against two full seasons of bookies' prices and **hasn't beaten them** – when they disagree, the bookies are usually right. So treat 📊 as a second opinion, not a tip. Every one is tracked in {#results} and {#model-check}.
 
@@ -196,12 +203,23 @@ Hawk's chance for each result, the bookies' chance in brackets (their margin tak
 📐 **The maths, honestly:** every leg has to land. Four 80% legs together come to about 41% – an acca is never as safe as its legs look. That's why the combined chance is always shown.`,
   },
   {
+    title: "⭐ NAP, singles, doubles & trebles",
+    description: `**Straight wins only** – no double chances, no goals markets. Posted at 9:07 from today's games.
+
+**{#hawk-nap}** – the NAP: Hawk's single most confident win of the day.
+**{#hawk-singles}** – up to 5 wins Hawk rates at **55% or more**, most likely first. Each is its own bet.
+**{#hawk-doubles}** – the two most likely wins together.
+**{#hawk-trebles}** – the three most likely wins together.
+
+If there aren't enough wins at 55%+, Hawk says so rather than forcing one. Every one is graded in {#results}.`,
+  },
+  {
     title: "📈 Keeping Hawk honest",
     description: `**{#results}** – every morning, everything from the day before: each pick with the final score, each builder and acca **leg by leg** with ✅ or ❌, and a tally.
 • Settled on the **90-minute score**, like the bookies
 • Postponed games are ➖ **void** and drop out of builders and accas
 • Games not finished in time show ⏳ and are re-checked the next morning
-• 🚩🟨 Corners and cards legs are graded once the stats arrive with the Tuesday/Friday data update – the post updates itself then
+• 🚩🟨 Corners and cards legs are graded the next morning with everything else – if the stats are late, they show ⏳ and are re-checked on Tuesday and Friday
 
 **{#model-check}** – every Tuesday: when Hawk says 70%, does it land about 70% of the time? Each band is marked ✅ on target, ⚠️ too confident or 🔼 too cautious. It takes a few weeks of results before these numbers mean much.
 

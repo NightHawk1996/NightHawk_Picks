@@ -96,7 +96,8 @@ const commands = [
         required: true,
         choices: [
           ...leagueOption.choices.filter((c) => !["DED", "PPL"].includes(c.value)),
-          { name: "🔁 Repost everything for today (leagues, builders, accas)", value: "EVERYTHING" },
+          { name: "🔁 Repost everything for today (leagues, builders, NAP, accas)", value: "EVERYTHING" },
+          { name: "NAP, singles, double & treble (run after the leagues)", value: "SINGLES" },
           { name: "Daily acca (run after the leagues)", value: "ACCA" },
           { name: "Weekend accas (run after the leagues)", value: "WEEKEND" },
           { name: "Champions League accas (run after CL)", value: "CLACCAS" },

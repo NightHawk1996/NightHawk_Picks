@@ -64,6 +64,10 @@ export function price(d: number): string {
     const n = Math.round(x * den);
     if (n > 0 && Math.abs(x - n / den) <= 0.0015 && (den <= 10 || n < den)) return n === den ? "Evens" : `${n}/${den}`;
   }
+  for (const den of [25, 50, 100]) { // the way bookies quote odd prices: 0.86 → 43/50, 1.02 → 51/50
+    const n = Math.round(x * den);
+    if (n > 0 && Math.abs(x - n / den) <= 0.006 && x < 4) return `${n}/${den}`;
+  }
   return `${Number(x.toFixed(2))}/1`; // e.g. an acca at 7.34 → "6.34/1", as bookies show it
 }
 export function bestLine(spec: LegSpec, books: BookPrices | undefined): string {

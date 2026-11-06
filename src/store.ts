@@ -21,7 +21,7 @@ export interface StoredGame {
 }
 export interface StoredDay { code: string; date: string; postedAt: string; games: StoredGame[] }
 export interface StoredAccaLeg extends StoredLeg { code: string; homeId: number; awayId: number; home: string; away: string; kickOff: string; postedAt: string; oh?: string; oa?: string }
-export type AccaKind = "daily" | "weekend" | "around" | "clweek" | "clnight";
+export type AccaKind = "daily" | "weekend" | "around" | "clweek" | "clnight" | "nap" | "singles" | "double" | "treble";
 export interface StoredAcca {
   kind?: AccaKind; // missing on accas saved before step 14 = daily
   date: string; // day it was posted
