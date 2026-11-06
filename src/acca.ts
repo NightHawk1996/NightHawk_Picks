@@ -34,7 +34,7 @@ export function candidateLegs(days: StoredDay[], now: Date, keep: (code: string,
         .map((s) => ({ label: s.label, p: s.p, spec: s.spec } as StoredAccaLeg))
         .sort((x, y) => preference(y) - preference(x) || y.p - x.p)[0];
       if (!best) continue;
-      out.push({ ...best, code: day.code, homeId: g.homeId, awayId: g.awayId, home: g.home, away: g.away, kickOff: g.kickOff, postedAt: day.postedAt });
+      out.push({ ...best, code: day.code, homeId: g.homeId, awayId: g.awayId, home: g.home, away: g.away, kickOff: g.kickOff, postedAt: day.postedAt, ...(g.oh ? { oh: g.oh, oa: g.oa } : {}) });
     }
   }
   return out;

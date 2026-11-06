@@ -17,9 +17,10 @@ export interface StoredGame {
   builder: { p: number; legs: StoredLeg[] } | null;
   strong: (StoredLeg & { family: string })[]; // 80%+ legs, candidates for the acca
   gaps?: (StoredLeg & { bookies: number; best: number })[]; // 📊 bookies' price bigger than Hawk's fair price
+  oh?: string; oa?: string; // the bookies' spelling of the teams, for finding prices later ("Hamburger SV" for HSV)
 }
 export interface StoredDay { code: string; date: string; postedAt: string; games: StoredGame[] }
-export interface StoredAccaLeg extends StoredLeg { code: string; homeId: number; awayId: number; home: string; away: string; kickOff: string; postedAt: string }
+export interface StoredAccaLeg extends StoredLeg { code: string; homeId: number; awayId: number; home: string; away: string; kickOff: string; postedAt: string; oh?: string; oa?: string }
 export type AccaKind = "daily" | "weekend" | "around" | "clweek" | "clnight";
 export interface StoredAcca {
   kind?: AccaKind; // missing on accas saved before step 14 = daily
@@ -48,6 +49,7 @@ export function toStoredGames(list: { m: Match; p: Predicted }[]): StoredGame[] 
       home: p.homeName,
       away: p.awayName,
       kickOff: m.utcDate,
+      ...(p.odds ? { oh: p.odds.home, oa: p.odds.away } : {}),
       pick: { label: best.label, p: Math.round(best.p * 1000) / 1000, spec: { t: "res", v: best.side } },
       builder: p.builder ? { p: Math.round(p.builder.p * 1000) / 1000, legs: p.builder.legs.map(leg) } : null,
       strong: p.legs

@@ -70,7 +70,16 @@ const withGames = [...new Set(fixtures.map((f) => f.tournamentId))];
 console.log(`Fixtures in the next ${WINDOW_HOURS}h: ${fixtures.length} · leagues: ${withGames.map((t) => TOURNAMENTS[t]).join(", ") || "none"}`);
 
 // 3. Prices – up to 3 leagues per call, one bookie per call
-const outcome = (name) => String(name).toLowerCase();
+// Outcome names vary by market: "1"/"X"/"2", "Over"/"Under", "Yes"/"No", and double chance as
+// "1X", "Home or Draw", "1/X", "X1"… – all brought to one spelling.
+function outcome(name) {
+  let t = String(name).toLowerCase().replace(/home/g, "1").replace(/away/g, "2").replace(/draw/g, "x").replace(/\s|\/|or|-/g, "");
+  if (t === "x1") t = "1x";
+  if (t === "2x") t = "x2";
+  if (t === "21") t = "12";
+  return t;
+}
+let shownDc = false;
 function extract(markets) {
   const mp = {};
   for (const [mid, m] of Object.entries(markets ?? {})) {
@@ -85,11 +94,16 @@ function extract(markets) {
       if (pl?.active !== false && pl?.price > 1 && fresh) prices[outcome(meta.o[oid] ?? oid)] = pl.price;
     }
     const k = meta.kind;
-    if (k === "r" && prices["1"] && prices["x"] && prices["2"]) mp.r = [prices["1"], prices["x"], prices["2"]];
-    else if (k === "dc" && (prices["1x"] || prices["x2"])) mp.dc = [prices["1x"] ?? 0, prices["12"] ?? 0, prices["x2"] ?? 0];
+    if (DEBUG && k === "dc" && !shownDc) { shownDc = true; console.log(`   [debug] double chance outcome names: ${Object.values(meta.o).join(", ")} → read as ${JSON.stringify(prices)}`); }
+    if (k === "r") mp.r = [prices["1"] ?? mp.r?.[0] ?? 0, prices["x"] ?? mp.r?.[1] ?? 0, prices["2"] ?? mp.r?.[2] ?? 0];
+    // Double chance can arrive split across several market entries (one with 1X, another with
+    // X2…), so fill in the three prices from whichever entries have them.
+    if (k === "dc") mp.dc = [prices["1x"] ?? mp.dc?.[0] ?? 0, prices["12"] ?? mp.dc?.[1] ?? 0, prices["x2"] ?? mp.dc?.[2] ?? 0];
     else if (k === "btts" && prices["yes"] && prices["no"]) mp.btts = [prices["yes"], prices["no"]];
     else if (!["r", "dc", "btts"].includes(k) && prices["over"] && prices["under"]) (mp[k] ??= {})[meta.line] = [prices["over"], prices["under"]];
   }
+  if (mp.dc && !mp.dc[0] && !mp.dc[2]) delete mp.dc;
+  if (mp.r && !(mp.r[0] && mp.r[1] && mp.r[2])) delete mp.r; // a match result needs all three prices
   return mp;
 }
 

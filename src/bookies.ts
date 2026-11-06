@@ -111,8 +111,13 @@ export async function loadPrices(kv: KVNamespace | undefined, code: string): Pro
 }
 
 // Each acca leg's bookie prices, found by league, kick-off and team names
-export async function booksForLegs<T extends { code: string; home: string; away: string; kickOff: string }>(kv: KVNamespace | undefined, legs: T[]): Promise<(BookPrices | undefined)[]> {
+// Uses the bookies' spelling saved with the pick ("Hamburger SV"), since Hawk's short names
+// ("HSV", "PSG") often share no word with it.
+export async function booksForLegs<T extends { code: string; home: string; away: string; kickOff: string; oh?: string; oa?: string }>(kv: KVNamespace | undefined, legs: T[]): Promise<(BookPrices | undefined)[]> {
   const byCode = new Map<string, GameOdds[]>();
   for (const code of new Set(legs.map((l) => l.code))) byCode.set(code, await loadPrices(kv, code));
-  return legs.map((l) => byCode.get(l.code)?.find((g) => sameGame(g, l))?.byBook);
+  return legs.map((l) => {
+    const want = { home: l.oh ?? l.home, away: l.oa ?? l.away, kickOff: l.kickOff };
+    return byCode.get(l.code)?.find((g) => sameGame(g, want))?.byBook;
+  });
 }
