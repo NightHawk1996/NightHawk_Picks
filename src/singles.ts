@@ -8,7 +8,7 @@
 
 import { discord, getChannels, cleanChannel, dublinDate, log, type DiscordEnv } from "./discord";
 import { loadPicks, saveAcca, type StoredAcca, type StoredAccaLeg, type AccaKind } from "./store";
-import { booksForLegs, legPrices, accaPrices, price, type BookPrices } from "./bookies";
+import { booksForLegs, legPrices, comboLine, price, type BookPrices } from "./bookies";
 import { accaWhyMenu, ACCA_NAMES } from "./acca";
 import { LEAGUES, COLOUR } from "./football";
 import { pct, fairOdds } from "./model";
@@ -96,13 +96,12 @@ export function multipleEmbed(kind: "double" | "treble", bet: StoredAcca | null,
   const title = `${ACCA_NAMES[kind]} – ${DAY.format(now)}`;
   const need = kind === "double" ? 2 : 3;
   if (!bet) return { title, description: `No ${kind} today – Hawk needs ${need} games with a pick it rates at ${pct(MIN_WIN)} or more.`, color: COLOUR, footer: { text: "Powered by Hawk 🦅" } };
-  const top = books ? accaPrices(bet.legs.map((l, i) => ({ spec: l.spec, books: books[i] }))).slice(0, 3) : [];
   return {
     title,
     description: [
       bet.legs.map((l, i) => `**${i + 1}.** ${gameLine(l)}\n　**${l.label}**${tag(l)} – ${pct(l.p)} · fair **${fairOdds(l.p)}**${pricesFor(l, books?.[i])}`).join("\n"),
       "",
-      `**Together: ${pct(bet.p)}** – Hawk's fair price **${fairOdds(bet.p)}**${top.length ? ` · ${top.map((b) => `${b.book} **${price(b.price)}**`).join(" · ")}` : ""}`,
+      `**Together: ${pct(bet.p)}** – Hawk's fair price **${fairOdds(bet.p)}**${books ? comboLine(bet.legs.map((l, i) => ({ spec: l.spec, books: books[i] })), fairOdds(bet.p)) : ""}`,
       `_The ${need} strongest picks of the day, wins first – ${need === 2 ? "both" : "all three"} have to land._${bet.legs.some((l) => !isWin(l)) ? TOPUP_NOTE : ""}`,
     ].join("\n"),
     color: COLOUR,

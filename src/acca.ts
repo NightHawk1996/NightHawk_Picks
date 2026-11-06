@@ -8,7 +8,7 @@
 
 import { COLOUR, LEAGUES } from "./football";
 import { pct, fairOdds } from "./model";
-import { bestLine, accaPrices, price, type BookPrices } from "./bookies";
+import { bestLine, comboLine, type BookPrices } from "./bookies";
 import type { StoredDay, StoredAcca, StoredAccaLeg, AccaKind, StoredGame } from "./store";
 
 const MAX_LEGS = 6;
@@ -94,8 +94,8 @@ export interface AccaBooks { legs: (BookPrices | undefined)[]; safer?: (BookPric
 // "· Paddy Power 6/1 · bet365 11/2 · Sky Bet 5/1" – only bookies that price every leg
 function booksLine(legs: StoredAccaLeg[], books?: (BookPrices | undefined)[]) {
   if (!books) return "";
-  const top = accaPrices(legs.map((l, i) => ({ spec: l.spec, books: books[i] }))).slice(0, 3);
-  return top.length ? ` · ${top.map((b) => `${b.book} **${price(b.price)}**`).join(" · ")}` : "";
+  const p = legs.reduce((x, l) => x * l.p, 1);
+  return comboLine(legs.map((l, i) => ({ spec: l.spec, books: books[i] })), fairOdds(p));
 }
 
 export function accaEmbed(kind: AccaKind, acca: StoredAcca | null, now: Date, emptyText?: string, books?: AccaBooks) {

@@ -126,3 +126,16 @@ export async function booksForLegs<T extends { code: string; home: string; away:
     return byCode.get(l.code)?.find((g) => sameGame(g, want))?.byBook;
   });
 }
+
+// The price line for a multiple (double, treble, acca). A combined price only counts if one bookie
+// prices every leg – a double can't be split across two bookies. When none does, say so and give
+// the price to beat, rather than inventing a total.
+export function comboLine(legs: { spec: LegSpec; books?: BookPrices }[], fair: string): string {
+  const full = accaPrices(legs).slice(0, 3);
+  if (full.length) return ` · ${full.map((b) => `${b.book} **${price(b.price)}**`).join(" · ")}`;
+  const counts = new Map<string, number>();
+  for (const l of legs) for (const { book } of legPrices(l.spec, l.books)) counts.set(book, (counts.get(book) ?? 0) + 1);
+  const best = [...counts].sort((a, b) => b[1] - a[1])[0];
+  if (!best) return "";
+  return `\n_No single bookie prices every leg this morning (closest: ${best[0]}, ${best[1]} of ${legs.length}) – check your bookie's price: worth it above **${fair}**._`;
+}
