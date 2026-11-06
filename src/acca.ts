@@ -8,6 +8,7 @@
 
 import { COLOUR, LEAGUES } from "./football";
 import { pct, fairOdds } from "./model";
+import { bestLine, accaPrices, price, type BookPrices } from "./bookies";
 import type { StoredDay, StoredAcca, StoredAccaLeg, AccaKind, StoredGame } from "./store";
 
 const MAX_LEGS = 6;
@@ -84,7 +85,16 @@ export function accaTitle(kind: AccaKind, acca: StoredAcca | null, now: Date) {
   return `${ACCA_NAMES[kind]} – ${DAY.format(now)}`;
 }
 
-export function accaEmbed(kind: AccaKind, acca: StoredAcca | null, now: Date, emptyText?: string) {
+export interface AccaBooks { legs: (BookPrices | undefined)[]; safer?: (BookPrices | undefined)[] }
+
+// "· Paddy Power 6/1 · bet365 11/2 · Sky Bet 5/1" – only bookies that price every leg
+function booksLine(legs: StoredAccaLeg[], books?: (BookPrices | undefined)[]) {
+  if (!books) return "";
+  const top = accaPrices(legs.map((l, i) => ({ spec: l.spec, books: books[i] }))).slice(0, 3);
+  return top.length ? ` · ${top.map((b) => `${b.book} **${price(b.price)}**`).join(" · ")}` : "";
+}
+
+export function accaEmbed(kind: AccaKind, acca: StoredAcca | null, now: Date, emptyText?: string, books?: AccaBooks) {
   const title = accaTitle(kind, acca, now);
   if (!acca) {
     return {
@@ -98,19 +108,19 @@ export function accaEmbed(kind: AccaKind, acca: StoredAcca | null, now: Date, em
   // Multi-day accas show the day too: "Sat 7 · 12:30" (the time is in each viewer's time zone)
   const when = (iso: string) => `${multiDay ? `${SHORT.format(new Date(iso))} · ` : ""}<t:${unix(iso)}:t>`;
   const line = (l: StoredAccaLeg, i: number) =>
-    `**${i + 1}.** ${LEAGUES[l.code]?.emoji ?? "⚽"} ${l.home} v ${l.away} · ${when(l.kickOff)}\n　**${l.label}** – ${pct(l.p)}`;
+    `**${i + 1}.** ${LEAGUES[l.code]?.emoji ?? "⚽"} ${l.home} v ${l.away} · ${when(l.kickOff)}\n　**${l.label}** – ${pct(l.p)} · fair **${fairOdds(l.p)}**${bestLine(l.spec, books?.legs[i])}`;
   const parts = [
     acca.legs.map(line).join("\n"),
     "",
-    `**Together: ${pct(acca.p)}** – Hawk's fair price **${fairOdds(acca.p)}**`,
+    `**Together: ${pct(acca.p)}** – Hawk's fair price **${fairOdds(acca.p)}**${booksLine(acca.legs, books?.legs)}`,
     `_Every leg has to land – ${acca.legs.length} legs at these chances come to ${pct(acca.p)} together._`,
   ];
   if (acca.safer) {
     parts.push(
       "",
       "🛡️ **Safer 4-leg version**",
-      acca.safer.legs.map((l) => `• ${l.home} v ${l.away} – **${l.label}** (${pct(l.p)})`).join("\n"),
-      `**Together: ${pct(acca.safer.p)}** – Hawk's fair price **${fairOdds(acca.safer.p)}**`,
+      acca.safer.legs.map((l, i) => `• ${l.home} v ${l.away} – **${l.label}** (${pct(l.p)})${bestLine(l.spec, books?.safer?.[i])}`).join("\n"),
+      `**Together: ${pct(acca.safer.p)}** – Hawk's fair price **${fairOdds(acca.safer.p)}**${booksLine(acca.safer.legs, books?.safer)}`,
     );
   }
   const rule = kind === "around" ? "The strongest pick from each league" : "One leg per game, 80%+ each";
@@ -118,7 +128,7 @@ export function accaEmbed(kind: AccaKind, acca: StoredAcca | null, now: Date, em
     title,
     description: parts.join("\n"),
     color: COLOUR,
-    footer: { text: `${rule} · Graded in #results after the last game · Powered by Hawk 🦅` },
+    footer: { text: `${rule}${books ? " · Bookie prices from this morning – they move, so check before you bet" : ""} · Graded in #results after the last game · Powered by Hawk 🦅` },
   };
 }
 

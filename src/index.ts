@@ -4,7 +4,7 @@
 
 import { leagueDay, tableEmbed, formEmbed, predictEmbed, historyCutoff } from "./football";
 import { loadHistory } from "./history";
-import { loadOdds } from "./odds";
+import { loadPrices } from "./bookies";
 import { whichLeague } from "./teams";
 import { loadTrends, raceChoices, trendsEmbed } from "./trends";
 import { loadSetPieceRatings } from "./setpiece-live";
@@ -146,7 +146,7 @@ export default {
           const now = new Date();
           ctx.waitUntil(
             loadHistory(env.HAWK, league, historyCutoff(now), now)
-              .then(async (history) => leagueDay(league, env.FOOTBALL_DATA_TOKEN, now, 168, env.BET_BUILDERS_CHANNEL_ID, undefined, history, await loadOdds(env.HAWK, league), await loadSetPieceRatings(env.HAWK, league, now)))
+              .then(async (history) => leagueDay(league, env.FOOTBALL_DATA_TOKEN, now, 168, env.BET_BUILDERS_CHANNEL_ID, undefined, history, await loadPrices(env.HAWK, league), await loadSetPieceRatings(env.HAWK, league, now)))
               .then((day) => finishReply(interaction, { embeds: [day.fixtures], components: whyMenu(league, now, day.predictions, "fx") }))
               .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
           );
@@ -183,7 +183,7 @@ export default {
             resolveLeague(env, team, chosen, "next")
               .then(async (league) => {
                 const history = await loadHistory(env.HAWK, league, historyCutoff(now), now);
-                const { why, ...embed } = await predictEmbed(league, team, env.FOOTBALL_DATA_TOKEN, now, history, await loadOdds(env.HAWK, league), await loadSetPieceRatings(env.HAWK, league, now));
+                const { why, ...embed } = await predictEmbed(league, team, env.FOOTBALL_DATA_TOKEN, now, history, await loadPrices(env.HAWK, league), await loadSetPieceRatings(env.HAWK, league, now));
                 return finishReply(interaction, { embeds: [embed], components: whyButton(league, now, why.homeId, why.awayId) });
               })
               .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
@@ -236,7 +236,7 @@ export default {
       if (why) {
         ctx.waitUntil(
           loadHistory(env.HAWK, why.code, historyCutoff(why.postedAt), why.postedAt)
-            .then(async (history) => explainMatch(why.code, env.FOOTBALL_DATA_TOKEN, why.postedAt, why.homeId, why.awayId, history, await loadOdds(env.HAWK, why.code), await loadSetPieceRatings(env.HAWK, why.code, why.postedAt)))
+            .then(async (history) => explainMatch(why.code, env.FOOTBALL_DATA_TOKEN, why.postedAt, why.homeId, why.awayId, history, await loadPrices(env.HAWK, why.code), await loadSetPieceRatings(env.HAWK, why.code, why.postedAt)))
             .then((embed) => finishReply(interaction, { embeds: [embed] }))
             .catch((err) => finishReply(interaction, { content: `⚠️ ${err.message}` })),
         );

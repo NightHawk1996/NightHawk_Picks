@@ -1,0 +1,37 @@
+# Each morning: bet365 & Paddy Power prices from OddsPapi → Hawk's Cloudflare storage.
+# Runs ~06:00 UTC (7am Irish winter time; GitHub can start scheduled runs a little late),
+# well before the 9am posts. Also runnable by hand: Actions tab → Bookie odds → Run workflow.
+name: Bookie odds
+
+on:
+  schedule:
+    - cron: "5 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The market list rarely changes – keep it for a week to save OddsPapi requests
+      - name: Week number
+        id: week
+        run: echo "week=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: oddspapi-markets-${{ steps.week.outputs.week }}
+      - name: Fetch and save prices
+        run: node scripts/bookie-odds.mjs
+        env:
+          ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}

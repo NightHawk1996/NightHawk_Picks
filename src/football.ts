@@ -1,6 +1,7 @@
 // Football data from football-data.org (free tier): fixtures, form, tables and predictions.
 
 import { buildRatings, predict, bestBuilder, light, pct, fairOdds, toFraction, type Prediction } from "./model";
+import { bestLine } from "./bookies";
 import { predictSetPieces, refereeOf, type SetPieceRatings, type SetPiecePrediction } from "./setpiece-live";
 import { oddsFor, disagreements, type GameOdds, type Disagreement } from "./odds";
 
@@ -244,15 +245,15 @@ function buildersEmbed(l: { name: string; emoji: string }, list: { m: Match; p: 
       const kickOff = Math.floor(new Date(m.utcDate).getTime() / 1000);
       return [
         `**${p.homeName} v ${p.awayName}** · <t:${kickOff}:${daily ? "t" : "f"}>`,
-        ...b.legs.map((x) => `• ${x.label} (${pct(x.p)})`),
-        `Together **${pct(b.p)}** · Hawk's fair price **${fairOdds(b.p)}**\n\n`,
+        ...b.legs.map((x) => `• ${x.label} (${pct(x.p)})${bestLine(x.spec, p.odds?.byBook)}`),
+        `Together **${pct(b.p)}** · Hawk's fair price **${fairOdds(b.p)}**${p.odds?.byBook ? " – worth it if your bookie's builder price is bigger" : ""}\n\n`,
       ].join("\n");
     });
   return {
     title: `🧩 ${l.emoji} ${l.name} – ${daily ? "today's" : "this week's"} bet builders`,
     description: fitLines(blocks, 3800, "_…more builders not shown_"),
     color: COLOUR,
-    footer: { text: `Most likely first · Priced as one bet, not leg by leg${list.some(({ p }) => p.builder!.legs.some((x) => !x.mask)) ? " · 🚩🟨 Corners and cards legs are priced separately from the score, and graded with the next morning's results" : ""} · Powered by Hawk 🦅` },
+    footer: { text: `Most likely first · Priced as one bet, not leg by leg${list.some(({ p }) => p.odds?.byBook) ? " · Each leg shows the best single price this morning – bookies price builders in their app, usually lower than the legs multiplied" : ""}${list.some(({ p }) => p.builder!.legs.some((x) => !x.mask)) ? " · 🚩🟨 Corners and cards legs are priced separately from the score, and graded with the next morning's results" : ""} · Powered by Hawk 🦅` },
   };
 }
 
@@ -393,9 +394,9 @@ export const GAP_NOTE = "📊 = the bookies' price is bigger than Hawk's fair pr
 
 export const pickOf = (p: Predicted) => {
   const options = [
-    { label: p.homeName, p: p.home },
-    { label: "Draw", p: p.draw },
-    { label: p.awayName, p: p.away },
+    { label: p.homeName, p: p.home, spec: { t: "res", v: "H" } as const },
+    { label: "Draw", p: p.draw, spec: { t: "res", v: "D" } as const },
+    { label: p.awayName, p: p.away, spec: { t: "res", v: "A" } as const },
   ];
   return options.reduce((a, b) => (b.p > a.p ? b : a));
 };
@@ -433,7 +434,7 @@ export async function predictEmbed(code: string, query: string, token: string, n
   const fields = [
     {
       name: "🎯 Result",
-      value: `🏠 ${p.homeName} **${pct(p.home)}** · 🤝 Draw **${pct(p.draw)}** · ✈️ ${p.awayName} **${pct(p.away)}**\nHawk's pick: **${pick.label}** ${light(pick.p)} – Hawk's fair price **${fairOdds(pick.p)}**`,
+      value: `🏠 ${p.homeName} **${pct(p.home)}** · 🤝 Draw **${pct(p.draw)}** · ✈️ ${p.awayName} **${pct(p.away)}**\nHawk's pick: **${pick.label}** ${light(pick.p)} – Hawk's fair price **${fairOdds(pick.p)}**${bestLine(pick.spec, p.odds?.byBook)}`,
     },
     ...(p.odds
       ? [{
@@ -465,7 +466,7 @@ export async function predictEmbed(code: string, query: string, token: string, n
     {
       name: "🧩 Hawk's bet builder",
       value: p.builder
-        ? `${p.builder.legs.map((x) => `• ${x.label} (${pct(x.p)})`).join("\n")}\nTogether: **${pct(p.builder.p)}** – Hawk's fair price **${fairOdds(p.builder.p)}**\n_Priced as one bet, not leg by leg.${p.builder.legs.some((x) => !x.mask) ? " Corners and cards are priced separately from the score." : ""}_`
+        ? `${p.builder.legs.map((x) => `• ${x.label} (${pct(x.p)})${bestLine(x.spec, p.odds?.byBook)}`).join("\n")}\nTogether: **${pct(p.builder.p)}** – Hawk's fair price **${fairOdds(p.builder.p)}**\n_Priced as one bet, not leg by leg.${p.builder.legs.some((x) => !x.mask) ? " Corners and cards are priced separately from the score." : ""}_`
         : "Nothing strong enough here – no builder lands 40%+ with real legs.",
     },
   ];

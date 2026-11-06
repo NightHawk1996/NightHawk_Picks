@@ -7,6 +7,7 @@
 
 import { clean } from "./history";
 import type { Match } from "./football";
+import type { BookPrices } from "./bookies";
 
 export const SPORTS: Record<string, string> = {
   PL: "soccer_epl",
@@ -24,7 +25,11 @@ export interface GameOdds {
   home: string; away: string; kickOff: string; books: number;
   chance: { H: number; D: number; A: number; over?: number; under?: number };
   best: { H: number; D: number; A: number; over?: number; under?: number };
+  byBook?: BookPrices; // each bookie's own prices (see bookies.ts)
 }
+
+// Exchanges charge commission, so their prices aren't comparable with a bookie's
+const EXCHANGE = /_ex|matchbook|smarkets/i;
 
 export async function fetchOdds(apiKey: string, code: string, from: Date, to: Date) {
   const sport = SPORTS[code];
@@ -42,13 +47,17 @@ export async function fetchOdds(apiKey: string, code: string, from: Date, to: Da
 function summarise(ev: any): GameOdds | null {
   const h2h: number[][] = [], totals: number[][] = [];
   const best = { H: 0, D: 0, A: 0, over: 0, under: 0 };
+  const byBook: BookPrices = {};
   for (const book of ev.bookmakers ?? []) {
+    const name = String(book.title ?? book.key);
+    const mine = EXCHANGE.test(book.key ?? "") ? null : (byBook[name] = {});
     for (const m of book.markets ?? []) {
       if (m.key === "h2h") {
         const price = (name: string) => m.outcomes.find((o: any) => o.name === name)?.price;
         const [h, d, a] = [price(ev.home_team), price("Draw"), price(ev.away_team)];
         if (!h || !d || !a) continue;
         h2h.push([h, d, a]);
+        if (mine) mine.r = [h, d, a];
         best.H = Math.max(best.H, h); best.D = Math.max(best.D, d); best.A = Math.max(best.A, a);
       }
       if (m.key === "totals") {
@@ -56,6 +65,7 @@ function summarise(ev: any): GameOdds | null {
         const u = m.outcomes.find((x: any) => x.name === "Under" && x.point === 2.5)?.price;
         if (!o || !u) continue;
         totals.push([o, u]);
+        if (mine) mine.g = { "2.5": [o, u] };
         best.over = Math.max(best.over, o); best.under = Math.max(best.under, u);
       }
     }
@@ -76,13 +86,14 @@ function summarise(ev: any): GameOdds | null {
     home: ev.home_team, away: ev.away_team, kickOff: ev.commence_time, books: h2h.length,
     chance: { H, D, A, ...(ou ? { over: ou[0], under: ou[1] } : {}) },
     best: { H: best.H, D: best.D, A: best.A, ...(ou ? { over: best.over, under: best.under } : {}) },
+    byBook: Object.fromEntries(Object.entries(byBook).filter(([, m]) => m.r || m.g)),
   };
 }
 
 // Matching a game in the odds to one of Hawk's fixtures: kick-off within 3 hours, and the
 // team names agreeing (the two sources spell them differently).
 const words = (s: string) => clean(s).split(" ").filter(Boolean);
-function nameMatch(a: string, b: string) {
+export function nameMatch(a: string, b: string) {
   const x = words(a), y = words(b);
   return x.some((t) => y.some((u) => u === t || (t.length >= 4 && u.startsWith(t)) || (u.length >= 4 && t.startsWith(u))));
 }

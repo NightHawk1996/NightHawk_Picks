@@ -11,11 +11,12 @@
 import { leagueDay, LEAGUES, COLOUR, historyCutoff } from "./football";
 import { loadHistory, importSeason, seasonLabel, seasonCode, DIVISIONS } from "./history";
 import { fetchOdds, saveOdds, loadOdds, type GameOdds } from "./odds";
+import { attachBookies, booksForLegs } from "./bookies";
 import { saveTeams } from "./teams";
 import { loadSetPieceRatings } from "./setpiece-live";
 import { whyMenu, summaryEmbed } from "./reasoning";
 import { discord, getChannels, cleanChannel, dublinDate, log, type DiscordEnv } from "./discord";
-import { toStoredGames, savePicks, loadPicks, saveAcca, saveAhead, loadAhead } from "./store";
+import { toStoredGames, savePicks, loadPicks, saveAcca, saveAhead, loadAhead, type StoredAcca } from "./store";
 import { buildAcca, buildAroundTheLeagues, candidateLegs, accaEmbed, accaWhyMenu } from "./acca";
 
 export interface DailyEnv extends DiscordEnv {
@@ -152,6 +153,11 @@ export async function runLeaguePost(env: DailyEnv, code: string, now = new Date(
         oddsNote = ` · ⚠️ odds: ${err.message}`;
       }
     }
+    // Each bookie's own prices: bet365 & Paddy Power for every market (from the 7am GitHub Action)
+    const before = oddsGames.filter((g) => g.byBook && Object.keys(g.byBook).length).length;
+    oddsGames = await attachBookies(env.HAWK, code, oddsGames);
+    const fullBooks = oddsGames.filter((g) => g.byBook?.bet365 || g.byBook?.["Paddy Power"]?.btts).length;
+    if (oddsGames.length) oddsNote += ` · 💷 ${before} with bookie prices, ${fullBooks} with bet365/Paddy Power`;
     const spr = await loadSetPieceRatings(env.HAWK, code, now);
     const day = await leagueDay(code, env.FOOTBALL_DATA_TOKEN, now, 24, builderId, aheadUntil, history, oddsGames, spr);
     if (spr && day.predictions.length) {
@@ -221,6 +227,14 @@ export async function runLeaguePost(env: DailyEnv, code: string, now = new Date(
 }
 
 // The daily acca: today's domestic games only – Champions League legs live in #hawk-cl-accas.
+// Bookie prices for an acca's legs (and its safer version). Never stops a post if it fails.
+async function accaBooks(env: DailyEnv, acca: StoredAcca | null) {
+  if (!acca) return undefined;
+  try {
+    return { legs: await booksForLegs(env.HAWK, acca.legs), safer: acca.safer ? await booksForLegs(env.HAWK, acca.safer.legs) : undefined };
+  } catch { return undefined; }
+}
+
 export async function runAccaPost(env: DailyEnv, now = new Date()): Promise<string> {
   const ch = await getChannels(env);
   let line: string;
@@ -233,7 +247,7 @@ export async function runAccaPost(env: DailyEnv, now = new Date()): Promise<stri
     const acca = buildAcca("daily", legs, today, now);
 
     await cleanChannel(env, channelId, ch.botId, () => true);
-    await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [accaEmbed("daily", acca, now)], components: accaWhyMenu("daily", acca) });
+    await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [accaEmbed("daily", acca, now, undefined, await accaBooks(env, acca))], components: accaWhyMenu("daily", acca) });
     if (acca) await saveAcca(env.HAWK, acca);
     line = acca ? `✅ #hawk-daily-accas – ${acca.legs.length} legs, ${Math.round(acca.p * 100)}% together` : "💤 #hawk-daily-accas – not enough strong legs today";
   } catch (err: any) {
@@ -262,8 +276,8 @@ export async function runWeekendPost(env: DailyEnv, now = new Date()): Promise<s
 
     await cleanChannel(env, channelId, ch.botId, () => true);
     const empty = days.length ? undefined : "No weekend games saved yet – the league runs save them on Friday mornings.";
-    await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [accaEmbed("weekend", acca, now, empty)], components: accaWhyMenu("weekend", acca) });
-    await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [accaEmbed("around", around, now)], components: accaWhyMenu("around", around) });
+    await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [accaEmbed("weekend", acca, now, empty, await accaBooks(env, acca))], components: accaWhyMenu("weekend", acca) });
+    await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [accaEmbed("around", around, now, undefined, await accaBooks(env, around))], components: accaWhyMenu("around", around) });
     if (acca) await saveAcca(env.HAWK, acca);
     if (around) await saveAcca(env.HAWK, around);
     line = `✅ #hawk-weekend-accas – weekend ${acca ? `${acca.legs.length} legs, ${Math.round(acca.p * 100)}%` : "none"} · around the leagues ${around ? `${around.legs.length} legs, ${Math.round(around.p * 100)}%` : "none"}`;
@@ -298,7 +312,7 @@ export async function runChampionsLeaguePost(env: DailyEnv, now = new Date(), fo
       const nights = new Set(legs.map((l) => dublinDate(new Date(l.kickOff)))).size;
       if (nights >= 2) {
         const week = buildAcca("clweek", legs, today, now);
-        await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [accaEmbed("clweek", week, now)], components: accaWhyMenu("clweek", week) });
+        await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [accaEmbed("clweek", week, now, undefined, await accaBooks(env, week))], components: accaWhyMenu("clweek", week) });
         if (week) await saveAcca(env.HAWK, week);
         parts.push(`matchweek ${week ? `${week.legs.length} legs, ${Math.round(week.p * 100)}%` : "none"}`);
       } else {
@@ -309,7 +323,7 @@ export async function runChampionsLeaguePost(env: DailyEnv, now = new Date(), fo
 
     const night = buildAcca("clnight", candidateLegs(tonight, now), today, now);
     await cleanChannel(env, channelId, ch.botId, (m) => (m.embeds?.[0]?.title ?? "").startsWith("🌙"));
-    await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [accaEmbed("clnight", night, now)], components: accaWhyMenu("clnight", night) });
+    await discord(env, "POST", `/channels/${channelId}/messages`, { embeds: [accaEmbed("clnight", night, now, undefined, await accaBooks(env, night))], components: accaWhyMenu("clnight", night) });
     if (night) await saveAcca(env.HAWK, night);
     parts.push(`tonight ${night ? `${night.legs.length} legs, ${Math.round(night.p * 100)}%` : "none"}`);
     line = `✅ #hawk-cl-accas – ${parts.join(" · ")}`;
