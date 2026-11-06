@@ -79,19 +79,20 @@ function outcome(name) {
   if (t === "21") t = "12";
   return t;
 }
-let shownDc = false;
+let shownDc = false, dcSkipped = 0;
 function extract(markets) {
   const mp = {};
   for (const [mid, m] of Object.entries(markets ?? {})) {
     const meta = byId.get(mid);
     // bet365's feed marks whole markets inactive even when every price in them is live, so
-    // judge each price on its own: active, and updated in the last 36 hours.
+    // judge each price on its own. (No age limit: "changedAt" is when a price last moved, and
+    // steady markets like double chance can sit unchanged for days.)
     if (!meta) continue;
     const prices = {};
     for (const [oid, o] of Object.entries(m.outcomes ?? {})) {
       const pl = Object.values(o.players ?? {})[0];
-      const fresh = !pl?.changedAt || Date.now() - Date.parse(pl.changedAt) < 36 * 3600e3;
-      if (pl?.active !== false && pl?.price > 1 && fresh) prices[outcome(meta.o[oid] ?? oid)] = pl.price;
+      if (pl?.active !== false && pl?.price > 1) prices[outcome(meta.o[oid] ?? oid)] = pl.price;
+      else if (DEBUG && meta.kind === "dc" && dcSkipped++ < 3) console.log(`   [debug] skipped double chance price: ${JSON.stringify(pl).slice(0, 300)}`);
     }
     const k = meta.kind;
     if (DEBUG && k === "dc" && !shownDc) { shownDc = true; console.log(`   [debug] double chance outcome names: ${Object.values(meta.o).join(", ")} → read as ${JSON.stringify(prices)}`); }
