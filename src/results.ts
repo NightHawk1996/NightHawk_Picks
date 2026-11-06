@@ -44,7 +44,7 @@ function finalScore(results: Match[], g: { homeId: number; awayId: number; kickO
 type Stats = { hc: number; ac: number; hk: number; ak: number } | null;
 const isSetPiece = (spec: any) => spec?.t === "corners" || spec?.t === "cards";
 
-// Corners and cards legs need the match stats, which arrive with the Tuesday/Friday history
+// Corners and cards legs need the match stats – from ESPN the next morning, or the Tuesday/Friday history
 // update – until then they're ⏳ and the builder waits.
 const legOutcome = (f: Final, spec: any, stats: Stats = null): Outcome =>
   f.status === "void" ? "void"
@@ -102,14 +102,14 @@ export async function gradeDay(env: ResultsEnv, date: string) {
 
       if (g.builder) {
         const needsStats = g.builder.legs.some((x) => isSetPiece(x.spec)) && f.status === "done";
-        const stats = needsStats ? await matchStats(env.HAWK, day.code, g.kickOff, g.homeId, g.awayId) : null;
+        const stats = needsStats ? await matchStats(env.HAWK, day.code, g.kickOff, g.homeId, g.awayId, g.home, g.away) : null;
         const legs = g.builder.legs.map((x) => ({ ...x, o: legOutcome(f, x.spec, stats) }));
         for (const x of legs) items.push({ kind: "leg", p: x.p, outcome: x.o, code: day.code });
         const bo = combine(legs.map((x) => x.o));
         items.push({ kind: "builder", p: g.builder.p, outcome: bo, code: day.code });
         const byOne = bo === "lost" && legs.filter((x) => x.o === "lost").length === 1;
         const word = bo === "won" ? "landed" : byOne ? "lost by one leg" : bo;
-        const extra = stats ? ` · 🚩 ${stats.hc + stats.ac} corners · 🟨 ${stats.hk + stats.ak} cards` : needsStats ? " · ⏳ corners/cards data due Tue/Fri" : "";
+        const extra = stats ? ` · 🚩 ${stats.hc + stats.ac} corners · 🟨 ${stats.hk + stats.ak} cards` : needsStats ? " · ⏳ corners/cards not in yet – checked again Tue/Fri" : "";
         builders.push(
           `${scoreLine(g, f)}${extra} → ${MARK[bo]} **${word}** (${pct(g.builder.p)})\n` +
           legs.map((x) => `${MARK[x.o]} ${x.label}`).join("\n"),
@@ -163,7 +163,7 @@ export async function gradeDay(env: ResultsEnv, date: string) {
     gapItems.length ? `📊 Bigger bookies' prices **${gapItems.filter((i) => i.outcome === "won").length}/${gapItems.length}** (${gapUnits >= 0 ? "+" : "−"}${Math.abs(gapUnits).toFixed(1)} units at best price)` : "",
     accaMarks.length ? `Accas: ${accaMarks.join(" ")}` : "",
   ].filter(Boolean).join(" · ");
-  const pending = items.some((i) => i.outcome === "pending") ? "\n⏳ Still waiting on some results – corners and cards arrive with the Tuesday/Friday data update. This post updates when they do." : "";
+  const pending = items.some((i) => i.outcome === "pending") ? "\n⏳ Still waiting on some results – checked again on Tuesday and Friday, and this post updates when they're in." : "";
   if (embeds.length) {
     embeds.push({
       title: `📊 ${dateLabel(date)} – how Hawk did`,

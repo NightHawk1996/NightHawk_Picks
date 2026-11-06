@@ -207,11 +207,13 @@ export default {
         case "daily-post": {
           const league = option(interaction, "league") ?? "PL";
           const today = dublinDate(new Date()), yesterday = dublinDate(new Date(Date.now() - 864e5));
+          const daysAgo = Math.min(Math.max(Number(option(interaction, "days_ago") ?? 1), 1), 7);
+          const resultsDay = dublinDate(new Date(Date.now() - daysAgo * 864e5));
           const job =
             league === "ACCA" ? runAccaPost(env)
             : league === "WEEKEND" ? runWeekendPost(env)
             : league === "CLACCAS" ? runChampionsLeaguePost(env, new Date(), true)
-            : league === "RESULTS" ? runResultsPost(env, yesterday)
+            : league === "RESULTS" ? runResultsPost(env, resultsDay)
             : league === "MODELCHECK" ? runModelCheck(env, new Date(), false)
             : league === "RESULTS_TODAY" ? runResultsPost(env, today)
             : league === "RACING" ? runRacingNow(env)

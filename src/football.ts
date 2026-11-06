@@ -252,7 +252,7 @@ function buildersEmbed(l: { name: string; emoji: string }, list: { m: Match; p: 
     title: `🧩 ${l.emoji} ${l.name} – ${daily ? "today's" : "this week's"} bet builders`,
     description: fitLines(blocks, 3800, "_…more builders not shown_"),
     color: COLOUR,
-    footer: { text: `Most likely first · Priced as one bet, not leg by leg${list.some(({ p }) => p.builder!.legs.some((x) => !x.mask)) ? " · 🚩🟨 Corners and cards legs are priced separately from the score, and graded after the Tuesday/Friday data update" : ""} · Powered by Hawk 🦅` },
+    footer: { text: `Most likely first · Priced as one bet, not leg by leg${list.some(({ p }) => p.builder!.legs.some((x) => !x.mask)) ? " · 🚩🟨 Corners and cards legs are priced separately from the score, and graded with the next morning's results" : ""} · Powered by Hawk 🦅` },
   };
 }
 

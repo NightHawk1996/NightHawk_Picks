@@ -6,6 +6,7 @@ import { buildCountRatings, expectedCounts, setPieceLegs, gradeSetPiece, type Co
 import { seasonCode, type HistoryRow } from "./csv";
 import { DIVISIONS } from "./history";
 import type { Leg } from "./model";
+import { espnStats } from "./espn";
 
 export interface SetPieceRatings { corners: CountRatings; cards: CountRatings; refsKnown: boolean }
 
@@ -63,8 +64,11 @@ export function predictSetPieces(r: SetPieceRatings, homeId: number, awayId: num
 export const refereeOf = (m: any): string | undefined =>
   (m.referees ?? []).find((x: any) => !x.type || x.type === "REFEREE")?.name;
 
-// A finished game's corners and cards, once the history files have it.
-export async function matchStats(kv: KVNamespace | undefined, code: string, kickOff: string, homeId: number, awayId: number) {
+// A finished game's corners and cards: ESPN first (usually there within the hour), then the
+// football-data.co.uk history files (Tuesday/Friday) as the backup.
+export async function matchStats(kv: KVNamespace | undefined, code: string, kickOff: string, homeId: number, awayId: number, home = "", away = "") {
+  const live = await espnStats(kv, code, kickOff, home, away).catch(() => null);
+  if (live) return live;
   if (!kv || !DIVISIONS[code]) return null;
   const { map, rows } = await historyRows(kv, code, new Date(kickOff));
   const day = Date.parse(kickOff.slice(0, 10));
