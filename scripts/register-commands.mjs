@@ -105,6 +105,8 @@ const commands = [
           { name: "Results – today so far", value: "RESULTS_TODAY" },
           { name: "Model check – last week (preview)", value: "MODELCHECK" },
           { name: "💷 Prices check – what bookie prices Hawk has", value: "PRICECHECK" },
+          { name: "🔴 Live bets – update now", value: "LIVE" },
+          { name: "📋 Line-ups – post any due now", value: "LINEUPS" },
           { name: "Racing – collect today's cards & results now", value: "RACING" },
           { name: "Racing – post today's #racecards", value: "RACECARDS" },
           { name: "Racing – post today's #racing-results", value: "RACERESULTS" },

@@ -8,7 +8,7 @@
 
 import { discord, getChannels, cleanChannel, dublinDate, log, type DiscordEnv } from "./discord";
 import { loadPicks, saveAcca, type StoredAcca, type StoredAccaLeg, type AccaKind } from "./store";
-import { booksForLegs, legPrices, comboLine, price, type BookPrices } from "./bookies";
+import { booksForLegs, legPrices, comboLine, accaPrices, price, type BookPrices } from "./bookies";
 import { accaWhyMenu, ACCA_NAMES } from "./acca";
 import { LEAGUES, COLOUR } from "./football";
 import { pct, fairOdds } from "./model";
@@ -138,11 +138,20 @@ export async function runSinglesPost(env: SinglesEnv, now = new Date()): Promise
     await post("hawk-doubles", multipleEmbed("double", double, now, books), double, "double");
     await post("hawk-trebles", multipleEmbed("treble", treble, now, books), treble, "treble");
 
+    // 💷 The best price for each bet when posted – the profit tracker settles €1 stakes at these
+    const withPrice = (bet: StoredAcca | null) => {
+      if (!bet || !books) return bet;
+      const best = accaPrices(bet.legs.map((l) => ({ spec: l.spec, books: books![wins.indexOf(l)] })))[0];
+      return best ? { ...bet, price: Math.round(best.price * 100) / 100, book: best.book } : bet;
+    };
+    const singlesBet = wins.length ? makeBet("singles", wins, today) : null;
+    if (singlesBet && books) singlesBet.legPrices = wins.map((w, i) => { const b = legPrices(w.spec, books![i])[0]; return b ? { price: b.price, book: b.book } : null; });
+
     // Saved for #results. Singles are saved together but graded one by one.
-    if (nap) await saveAcca(env.HAWK, nap);
-    if (wins.length) await saveAcca(env.HAWK, makeBet("singles", wins, today));
-    if (double) await saveAcca(env.HAWK, double);
-    if (treble) await saveAcca(env.HAWK, treble);
+    if (nap) await saveAcca(env.HAWK, withPrice(nap)!);
+    if (singlesBet) await saveAcca(env.HAWK, singlesBet);
+    if (double) await saveAcca(env.HAWK, withPrice(double)!);
+    if (treble) await saveAcca(env.HAWK, withPrice(treble)!);
     parts.unshift(nap ? `NAP ${nap.legs[0].label} ${pct(nap.p)} · ${wins.length} singles (${winsOnly.length >= wins.length ? "all wins" : `${Math.min(winsOnly.length, wins.length)} wins + ${wins.length - Math.min(winsOnly.length, wins.length)} topped up`}) · double ${double ? pct(double.p) : "none"} · treble ${treble ? pct(treble.p) : "none"}` : "nothing at 55%+ today");
   } catch (err: any) {
     parts.unshift(`failed: ${err.message}`);

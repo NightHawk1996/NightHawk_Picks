@@ -10,6 +10,10 @@ import { loadTrends, raceChoices, trendsEmbed } from "./trends";
 import { loadSetPieceRatings } from "./setpiece-live";
 import { whyMenu, whyButton, parseWhy, explainMatch } from "./reasoning";
 import { runSinglesPost } from "./singles";
+import { runLineups } from "./lineups";
+import { runLiveTracker } from "./live";
+import { getChannels, log } from "./discord";
+const LIVE_CRON = "*/5 10-23 * * *"; // must match wrangler.toml exactly
 import { racingTaskForRun, runRacingTask, runRacingNow } from "./racing";
 import { runLeaguePost, runAccaPost, runWeekendPost, runChampionsLeaguePost, runSpecialPosts, jobForRun, historyTaskForRun, runHistoryImport, DAILY_ORDER } from "./daily";
 import { runResultsPost, hasPending } from "./results";
@@ -273,6 +277,8 @@ export default {
             : league === "RACECARDS" ? runRacingTask(env, "POST_CARDS")
             : league === "RACERESULTS" ? runRacingTask(env, "POST_RESULTS")
             : league === "PRICECHECK" ? priceCheck(env)
+            : league === "LIVE" ? runLiveTracker(env).then((x) => x ?? "🔴 Live tracker: nothing to update (no bets with games in the next hour, or nothing changed)")
+            : league === "LINEUPS" ? runLineups(env).then((x) => x ?? "📋 Line-ups: none due yet (games 10–75 minutes from kick-off, once announced)")
             : league === "EVERYTHING" ? startChain(env, [...DAILY_ORDER, "SINGLES", "ACCA", "SPECIAL"]).then(() =>
                 `🔁 Reposting today's league posts, bet builders, NAP & singles, and accas – one step every few seconds, about 1–2 minutes in all. Each step logs to #bot-log as it finishes.`)
             : runLeaguePost(env, league, new Date(), true);
@@ -309,6 +315,12 @@ export default {
   // Runs on the schedule in wrangler.toml.
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const when = new Date(controller.scheduledTime);
+    // Every 5 minutes through the day: line-ups on the :00/:10/:20…, the live tracker on the :05/:15/:25…
+    if (controller.cron === LIVE_CRON) {
+      const job = when.getUTCMinutes() % 10 === 0 ? runLineups(env, when) : runLiveTracker(env, when);
+      ctx.waitUntil(job.catch(async (err) => { try { await log(env, await getChannels(env), `⚠️ ${when.getUTCMinutes() % 10 === 0 ? "#team-news" : "#live-bets"} – ${err.message}`); } catch {} }).then(() => {}));
+      return;
+    }
     const racing = racingTaskForRun(when);
     if (racing) {
       ctx.waitUntil(runRacingTask(env, racing, when).then(() => {}));

@@ -5,7 +5,7 @@
 
 import { clean } from "./history";
 
-const BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
+export const BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 export const ESPN_SLUG: Record<string, string> = {
   PL: "eng.1", ELC: "eng.2", PD: "esp.1", SA: "ita.1", BL1: "ger.1", FL1: "fra.1",
   CL: "uefa.champions", EL: "uefa.europa", ECL: "uefa.europa.conf",
@@ -13,20 +13,26 @@ export const ESPN_SLUG: Record<string, string> = {
 const KEEP_SECONDS = 60 * 86400;
 
 export interface CountStats { hc: number; ac: number; hk: number; ak: number }
-interface EspnGame { id: string; done: boolean; teams: { id: string; side: "home" | "away"; name: string }[] }
+export interface EspnGame {
+  id: string; done: boolean;
+  state: "pre" | "in" | "post"; // not started / playing / finished
+  clock: string;                // "60'", "HT", "FT"
+  kickOff: string;
+  teams: { id: string; side: "home" | "away"; name: string; score: number }[];
+}
 
-async function espnText(url: string): Promise<string | null> {
+export async function espnText(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } });
     return res.ok ? await res.text() : null;
   } catch { return null; }
 }
 
-// One league's games on one day (memo kept for 10 minutes so a results run fetches each once)
+// One league's games on one day (kept for a minute, so one run fetches each league once)
 const boards = new Map<string, { at: number; games: EspnGame[] | null }>();
-async function scoreboard(slug: string, ymd: string): Promise<EspnGame[] | null> {
+export async function scoreboard(slug: string, ymd: string): Promise<EspnGame[] | null> {
   const key = `${slug}:${ymd}`, hit = boards.get(key);
-  if (hit && Date.now() - hit.at < 600_000) return hit.games;
+  if (hit && Date.now() - hit.at < 60_000) return hit.games;
   const text = await espnText(`${BASE}/${slug}/scoreboard?dates=${ymd}`);
   let games: EspnGame[] | null = null;
   if (text) {
@@ -34,7 +40,10 @@ async function scoreboard(slug: string, ymd: string): Promise<EspnGame[] | null>
     games = (j.events ?? []).map((e: any) => ({
       id: String(e.id),
       done: !!e.status?.type?.completed,
-      teams: (e.competitions?.[0]?.competitors ?? []).map((c: any) => ({ id: String(c.team?.id ?? c.id), side: c.homeAway, name: c.team?.displayName ?? c.team?.name ?? "" })),
+      state: e.status?.type?.state ?? (e.status?.type?.completed ? "post" : "pre"),
+      clock: e.status?.type?.shortDetail ?? e.status?.displayClock ?? "",
+      kickOff: e.date ?? "",
+      teams: (e.competitions?.[0]?.competitors ?? []).map((c: any) => ({ id: String(c.team?.id ?? c.id), side: c.homeAway, name: c.team?.displayName ?? c.team?.name ?? "", score: Number(c.score ?? 0) })),
     }));
   }
   boards.set(key, { at: Date.now(), games });
@@ -103,4 +112,12 @@ export async function espnStats(kv: KVNamespace | undefined, code: string, kickO
   const stats = text ? statsFromSummary(text, game) : null;
   if (stats && kv) await kv.put(cacheKey, JSON.stringify(stats), { expirationTtl: KEEP_SECONDS });
   return stats;
+}
+
+// The game in a league on a kick-off date, by team names (the bookies' spelling works best)
+export async function findEspnGame(code: string, kickOff: string, home: string, away: string): Promise<EspnGame | undefined> {
+  const slug = ESPN_SLUG[code];
+  if (!slug) return undefined;
+  const games = await scoreboard(slug, kickOff.slice(0, 10).replace(/-/g, ""));
+  return games ? findGame(games, home, away) : undefined;
 }

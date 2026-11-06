@@ -1,10 +1,10 @@
 // #model-check – every Tuesday (once corners and cards from the weekend are in): is Hawk's 70% really 70%?
 // Compares what Hawk said with what happened, for last week and for all time.
-// Only accuracy is measured – without bookies' prices there's no profit figure.
+// Also 💷: what €1 on every NAP, single, double, treble and acca would have made at the best price.
 
 import { COLOUR, LEAGUES } from "./football";
 import { discord, getChannels, cleanChannel, dublinDate, log, type DiscordEnv } from "./discord";
-import type { GradedDay, GradedItem } from "./results";
+import { STAKE_GROUPS, stakeProfit, type GradedDay, type GradedItem } from "./results";
 
 export interface CheckEnv extends DiscordEnv { HAWK?: KVNamespace }
 
@@ -17,7 +17,9 @@ interface AllTime {
   accas: Tally;
   leagues: Record<string, Tally>; // picks by league
   gaps?: Gaps; // 📊 where the bookies' price was bigger than Hawk's fair price
+  pnl?: Record<string, Pnl>; // 💷 €1 on every bet at the best price
 }
+interface Pnl { n: number; won: number; profit: number }
 interface Gaps { n: number; sumP: number; sumB: number; won: number; profit: number }
 const noGaps = (): Gaps => ({ n: 0, sumP: 0, sumB: 0, won: 0, profit: 0 });
 
@@ -37,7 +39,12 @@ const pc = (x: number) => `${Math.round(x * 100)}%`;
 const settled = (i: GradedItem) => i.outcome === "won" || i.outcome === "lost";
 
 function summarise(items: GradedItem[]) {
-  const out = { bands: Object.fromEntries(BANDS.map((b) => [b.key, empty()])) as Record<string, Tally>, builders: empty(), accas: empty(), picks: empty(), leagues: {} as Record<string, Tally>, gaps: noGaps() };
+  const pnl: Record<string, Pnl> = {};
+  for (const i of items.filter(settled)) if (i.kind === "stake") {
+    const t = (pnl[i.bet!] ??= { n: 0, won: 0, profit: 0 });
+    t.n++; if (i.outcome === "won") t.won++; t.profit += stakeProfit(i);
+  }
+  const out = { pnl, bands: Object.fromEntries(BANDS.map((b) => [b.key, empty()])) as Record<string, Tally>, builders: empty(), accas: empty(), picks: empty(), leagues: {} as Record<string, Tally>, gaps: noGaps() };
   for (const i of items.filter(settled)) {
     if (i.kind === "pick" || i.kind === "leg") {
       const band = BANDS.find((b) => i.p >= b.lo && i.p < b.hi)!;
@@ -97,6 +104,7 @@ export async function runModelCheck(env: CheckEnv, now = new Date(), addToAllTim
       for (const [code, t] of Object.entries(week.leagues)) merge((combined.leagues[code] ??= empty()), t);
       const g = (combined.gaps ??= noGaps());
       g.n += week.gaps.n; g.sumP += week.gaps.sumP; g.sumB += week.gaps.sumB; g.won += week.gaps.won; g.profit += week.gaps.profit;
+      for (const [k, t] of Object.entries(week.pnl)) { const c = ((combined.pnl ??= {})[k] ??= { n: 0, won: 0, profit: 0 }); c.n += t.n; c.won += t.won; c.profit += t.profit; }
       combined.weeks.push(weekId);
       if (addToAllTime) await env.HAWK.put("modelcheck:alltime", JSON.stringify(combined));
     }
@@ -142,6 +150,18 @@ export async function runModelCheck(env: CheckEnv, now = new Date(), addToAllTim
         ]
       : [];
 
+    // 💷 Following Hawk – €1 on every bet at the best price when it was posted
+    const money = (x: number) => `${x >= 0 ? "+" : "−"}€${Math.abs(x).toFixed(2)}`;
+    const pnlRow = (label: string, w?: Pnl, a?: Pnl) => a?.n
+      ? `${label}: ${a.n} bet${a.n === 1 ? "" : "s"} · ${a.won} won · **${money(a.profit)}** (${a.profit >= 0 ? "+" : "−"}${Math.abs(Math.round((100 * a.profit) / a.n))}% return)${w?.n ? ` · last week ${money(w.profit)}` : ""}`
+      : null;
+    const pnlRows = Object.entries(STAKE_GROUPS).map(([k, label]) => pnlRow(label, week.pnl[k], combined.pnl?.[k])).filter(Boolean);
+    const allP = Object.values(combined.pnl ?? {}).reduce((t, x) => ({ n: t.n + x.n, won: t.won + x.won, profit: t.profit + x.profit }), { n: 0, won: 0, profit: 0 });
+    const pnlLines = pnlRows.length
+      ? ["", `**💷 Following Hawk – €1 on every bet at the best price**`, ...pnlRows,
+          `**Overall: ${money(allP.profit)}** from ${allP.n} bets${allP.n < 100 ? " _(early days – it takes a few hundred bets before this means much)_" : ""}`]
+      : [];
+
     // Plain-English summary
     const judged = BANDS.map((b) => ({ b, v: verdict(combined.bands[b.key]) })).filter((x) => x.v.mark !== "⏳");
     const worst = judged.filter((x) => x.v.mark === "⚠️").sort((x, y) => x.v.off - y.v.off)[0];
@@ -164,11 +184,12 @@ export async function runModelCheck(env: CheckEnv, now = new Date(), addToAllTim
         ...[groupLine("🧩 Builders", combined.builders), groupLine("🎟️ Accas", combined.accas)].filter(Boolean),
         ...(leagueLines.length ? ["", `**Picks by league:** ${leagueLines.join(" · ")}`] : []),
         ...gapLines,
+        ...pnlLines,
         "",
         summary,
       ].join("\n"),
       color: COLOUR,
-      footer: { text: `✅ on target · ⚠️ too confident · 🔼 too cautious · ⏳ under ${MIN_TO_JUDGE} bets · Accuracy only – no odds, so no profit figure · Powered by Hawk 🦅` },
+      footer: { text: `✅ on target · ⚠️ too confident · 🔼 too cautious · ⏳ under ${MIN_TO_JUDGE} bets · 💷 profit at the best price when each bet was posted · Powered by Hawk 🦅` },
     };
 
     const embeds: any[] = [embed];

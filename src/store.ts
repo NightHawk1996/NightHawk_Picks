@@ -31,6 +31,10 @@ export interface StoredAcca {
   legs: StoredAccaLeg[];
   p: number;
   safer: { legs: StoredAccaLeg[]; p: number } | null;
+  // 💷 Best price when posted, for the profit tracker: the whole bet at one bookie, or for
+  // singles each leg's best price
+  price?: number; book?: string;
+  legPrices?: ({ price: number; book: string } | null)[];
 }
 
 const leg = (l: Leg): StoredLeg => ({ label: l.label, p: Math.round(l.p * 1000) / 1000, spec: l.spec });

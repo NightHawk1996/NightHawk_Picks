@@ -56,6 +56,7 @@ const LAYOUT = [
       { name: "champions-league" },
       { name: "europa-league" },
       { name: "conference-league" },
+      { name: "team-news", topic: "📋 Confirmed line-ups about an hour before kick-off, for every game in Hawk's bets" },
     ],
   },
   {
@@ -86,6 +87,7 @@ const LAYOUT = [
       { name: "hawk-singles", topic: "🎯 Today's straight wins Hawk rates at 55%+, most likely first" },
       { name: "hawk-doubles", topic: "✌️ The two most likely wins of the day together" },
       { name: "hawk-trebles", topic: "🎲 The three most likely wins of the day together" },
+      { name: "live-bets", topic: "🔴 Today's bets with live scores – updated every 10 minutes" },
       { name: "hawk-daily-accas", from: "hawk-acca", topic: "Today's acca – the strongest legs from the domestic leagues" },
       { name: "hawk-weekend-accas", topic: "Posted Fridays – the weekend acca and Around the Leagues" },
       { name: "hawk-cl-accas", topic: "Champions League – the matchweek acca and tonight's acca" },
@@ -154,7 +156,9 @@ Premier League · Championship · La Liga · Serie A · Bundesliga · Ligue 1 ·
 **🗓️ 9:09 Fridays** – the weekend acca and Around the Leagues in {#hawk-weekend-accas}
 **🇪🇺 9:09 Champions League days** – the matchweek acca and tonight's acca in {#hawk-cl-accas}
 **📈 9:10** – yesterday's picks graded in {#results}
-**🧪 9:18 Tuesdays** – the weekly accuracy check in {#model-check}
+**🧪 9:18 Tuesdays** – the weekly accuracy check in {#model-check}, including 💷 profit
+**📋 ~1 hour before kick-off** – confirmed line-ups in {#team-news} for every game in Hawk's bets
+**🔴 From the first kick-off** – {#live-bets}: every bet with live scores, updated every 10 minutes
 
 League channels, builders and accas are cleared each morning so only the current picks are up. The full record lives in {#results} and {#model-check}.`,
   },
@@ -214,12 +218,22 @@ Hawk's chance for each result, the bookies' chance in brackets (their margin tak
 **Quiet days:** if there aren't enough wins at 55%+, Hawk tops up with its best **goals, BTTS or team-to-score** picks rated **55–75%** – marked ➕. Never the 1/8 "safe" legs. With no games at all, the channels say so. Every pick is graded in {#results}.`,
   },
   {
+    title: "🔴 Live bets & 📋 team news",
+    description: `**{#live-bets}** – one message per bet (NAP, singles, double, treble, accas), updated every 10 minutes:
+✅ landed · ❌ gone · 🟢 on course – would land if it ended now · 🟠 needs a change · ⏳ to play
+Legs like _over 1.5 goals_ show ✅ as soon as they're safe. The official result still comes in {#results} the next morning.
+
+**{#team-news}** – confirmed line-ups about an hour before kick-off, for every game in Hawk's bets: each XI, what changed from that team's last line-up, and ⚠️ any **regular starter missing** (once Hawk has seen a few of their line-ups). Hawk's percentages are set at 9am, before line-ups are known – so a big name missing is worth a second look.`,
+  },
+  {
     title: "📈 Keeping Hawk honest",
     description: `**{#results}** – every morning, everything from the day before: each pick with the final score, each builder and acca **leg by leg** with ✅ or ❌, and a tally.
 • Settled on the **90-minute score**, like the bookies
 • Postponed games are ➖ **void** and drop out of builders and accas
 • Games not finished in time show ⏳ and are re-checked the next morning
 • 🚩🟨 Corners and cards legs are graded the next morning with everything else – if the stats are late, they show ⏳ and are re-checked on Tuesday and Friday
+
+**💷 Profit tracker** – every NAP, single, double, treble and acca is tracked as a **€1 stake at the best bookie price when it was posted**. Each day's result is in {#results}; the running total and return for each bet type is in {#model-check}. This is the real test of whether following Hawk pays.
 
 **{#model-check}** – every Tuesday: when Hawk says 70%, does it land about 70% of the time? Each band is marked ✅ on target, ⚠️ too confident or 🔼 too cautious. It takes a few weeks of results before these numbers mean much.
 

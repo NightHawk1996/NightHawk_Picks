@@ -11,7 +11,7 @@
 import { leagueDay, LEAGUES, COLOUR, historyCutoff } from "./football";
 import { loadHistory, importSeason, seasonLabel, seasonCode, DIVISIONS } from "./history";
 import { fetchOdds, saveOdds, loadOdds, type GameOdds } from "./odds";
-import { attachBookies, booksForLegs } from "./bookies";
+import { attachBookies, booksForLegs, accaPrices } from "./bookies";
 import { saveTeams } from "./teams";
 import { loadSetPieceRatings } from "./setpiece-live";
 import { whyMenu, summaryEmbed } from "./reasoning";
@@ -230,10 +230,15 @@ export async function runLeaguePost(env: DailyEnv, code: string, now = new Date(
 
 // The daily acca: today's domestic games only – Champions League legs live in #hawk-cl-accas.
 // Bookie prices for an acca's legs (and its safer version). Never stops a post if it fails.
+// Also records the best one-bookie price on the acca itself (saved straight after posting), so
+// the 💷 profit tracker can settle a €1 stake at it.
 async function accaBooks(env: DailyEnv, acca: StoredAcca | null) {
   if (!acca) return undefined;
   try {
-    return { legs: await booksForLegs(env.HAWK, acca.legs), safer: acca.safer ? await booksForLegs(env.HAWK, acca.safer.legs) : undefined };
+    const legs = await booksForLegs(env.HAWK, acca.legs);
+    const best = accaPrices(acca.legs.map((l, i) => ({ spec: l.spec, books: legs[i] })))[0];
+    if (best) { acca.price = Math.round(best.price * 100) / 100; acca.book = best.book; }
+    return { legs, safer: acca.safer ? await booksForLegs(env.HAWK, acca.safer.legs) : undefined };
   } catch { return undefined; }
 }
 

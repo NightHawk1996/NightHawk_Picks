@@ -20,7 +20,22 @@ const MARK: Record<Outcome, string> = { won: "✅", lost: "❌", void: "➖", pe
 const VOID = ["POSTPONED", "CANCELLED", "SUSPENDED", "AWARDED"];
 
 // What #model-check needs later: every graded chance and what happened.
-export interface GradedItem { kind: "pick" | "builder" | "acca" | "leg" | "gap"; p: number; outcome: Outcome; code?: string; bookies?: number; odds?: number }
+export interface GradedItem { kind: "pick" | "builder" | "acca" | "leg" | "gap" | "stake"; p: number; outcome: Outcome; code?: string; bookies?: number; odds?: number; bet?: string }
+
+// 💷 Profit tracker groups – a €1 stake on every bet at the best price when it was posted
+export const STAKE_GROUPS: Record<string, string> = { nap: "⭐ NAP", singles: "🎯 Singles", double: "✌️ Doubles", treble: "🎲 Trebles", acca: "🎟️ Accas" };
+export const stakeGroup = (kind: string) => (STAKE_GROUPS[kind] ? kind : "acca");
+export const stakeProfit = (i: GradedItem) => (i.outcome === "won" ? (i.odds ?? 1) - 1 : i.outcome === "lost" ? -1 : 0);
+// "💷 €1 a bet at the best price: ⭐ NAP +0.80 · 🎯 Singles −1.35 · …"
+function pnlLine(items: GradedItem[]): string {
+  const by = new Map<string, number>();
+  for (const i of items) if (i.kind === "stake" && (i.outcome === "won" || i.outcome === "lost")) by.set(i.bet!, (by.get(i.bet!) ?? 0) + stakeProfit(i));
+  if (!by.size) return "";
+  const money = (x: number) => `${x >= 0 ? "+" : "−"}€${Math.abs(x).toFixed(2)}`;
+  const total = [...by.values()].reduce((a, b) => a + b, 0);
+  return `\n💷 **€1 a bet at the best price:** ${Object.keys(STAKE_GROUPS).filter((k) => by.has(k)).map((k) => `${STAKE_GROUPS[k]} ${money(by.get(k)!)}`).join(" · ")} · **day ${money(total)}**`;
+}
+
 export interface GradedDay { date: string; items: GradedItem[] }
 
 const nextDay = (date: string) => new Date(Date.parse(`${date}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
@@ -138,6 +153,7 @@ export async function gradeDay(env: ResultsEnv, date: string) {
     if (kind === "singles") {
       const won = legs.filter((x) => x.o === "won").length, settled = legs.filter((x) => x.o === "won" || x.o === "lost").length;
       accaMarks.push(`🎯 ${won}/${settled}`);
+      legs.forEach((x, i) => { const lp = acca.legPrices?.[i]; if (lp) items.push({ kind: "stake", bet: "singles", p: x.p, outcome: x.o, odds: lp.price }); });
       embeds.push({
         title: `${ACCA_NAMES.singles} – ${dateLabel(date)}`,
         description: `**${won} of ${settled}** landed\n\n` + legs.map((x) => `${MARK[x.o]} ${scoreLine(x, x.f)} · ${x.label} ${pct(x.p)}`).join("\n"),
@@ -147,6 +163,7 @@ export async function gradeDay(env: ResultsEnv, date: string) {
     }
     const outcome = combine(legs.map((x) => x.o));
     items.push({ kind: "acca", p: acca.p, outcome });
+    if (acca.price) items.push({ kind: "stake", bet: stakeGroup(kind), p: acca.p, outcome, odds: acca.price });
     const name = ACCA_NAMES[kind];
     accaMarks.push(`${name.split(" ")[0]} ${MARK[outcome]}`);
     const lost = legs.filter((x) => x.o === "lost").length;
@@ -173,7 +190,7 @@ export async function gradeDay(env: ResultsEnv, date: string) {
     builders.total ? `🧩 Builders **${builders.won}/${builders.total}**` : "",
     gapItems.length ? `📊 Bigger bookies' prices **${gapItems.filter((i) => i.outcome === "won").length}/${gapItems.length}** (${gapUnits >= 0 ? "+" : "−"}${Math.abs(gapUnits).toFixed(1)} units at best price)` : "",
     accaMarks.length ? `Accas: ${accaMarks.join(" ")}` : "",
-  ].filter(Boolean).join(" · ");
+  ].filter(Boolean).join(" · ") + pnlLine(items);
   const pending = items.some((i) => i.outcome === "pending") ? "\n⏳ Still waiting on some results – checked again on Tuesday and Friday, and this post updates when they're in." : "";
   if (embeds.length) {
     embeds.push({
