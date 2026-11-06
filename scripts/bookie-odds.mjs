@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 
 const env = process.env;
 const DRY = process.argv.includes("--dry-run");
+const DEBUG = process.argv.includes("--debug");
 const KEY = env.ODDSPAPI_KEY?.trim();
 if (!KEY) throw new Error("ODDSPAPI_KEY is missing");
 if (!DRY && !(env.CF_API_TOKEN && env.CF_ACCOUNT_ID && env.CF_KV_NAMESPACE_ID)) throw new Error("Cloudflare secrets missing (CF_API_TOKEN, CF_ACCOUNT_ID, CF_KV_NAMESPACE_ID)");
@@ -44,7 +45,7 @@ else {
   writeFileSync(CACHE, JSON.stringify(markets));
 }
 const KINDS = [
-  ["r", /^full time result$/i], ["dc", /^double chance$/i], ["btts", /^both teams to score$/i],
+  ["r", /^full time result$/i], ["dc", /^double chance( full time)?$/i], ["btts", /^both teams to score$/i],
   ["g", /^over under full time$/i], ["t1", /^over under team 1$/i], ["t2", /^over under team 2$/i],
   ["c", /^corners - over under full time$/i], ["c1", /^corners - over under team 1$/i], ["c2", /^corners - over under team 2$/i],
   ["k", /^bookings - over under full time$/i], ["k1", /^bookings - over under team 1$/i], ["k2", /^bookings - over under team 2$/i],
@@ -74,11 +75,14 @@ function extract(markets) {
   const mp = {};
   for (const [mid, m] of Object.entries(markets ?? {})) {
     const meta = byId.get(mid);
-    if (!meta || m.marketActive === false) continue;
+    // bet365's feed marks whole markets inactive even when every price in them is live, so
+    // judge each price on its own: active, and updated in the last 36 hours.
+    if (!meta) continue;
     const prices = {};
     for (const [oid, o] of Object.entries(m.outcomes ?? {})) {
       const pl = Object.values(o.players ?? {})[0];
-      if (pl?.active !== false && pl?.price > 1) prices[outcome(meta.o[oid] ?? oid)] = pl.price;
+      const fresh = !pl?.changedAt || Date.now() - Date.parse(pl.changedAt) < 36 * 3600e3;
+      if (pl?.active !== false && pl?.price > 1 && fresh) prices[outcome(meta.o[oid] ?? oid)] = pl.price;
     }
     const k = meta.kind;
     if (k === "r" && prices["1"] && prices["x"] && prices["2"]) mp.r = [prices["1"], prices["x"], prices["2"]];
@@ -97,10 +101,24 @@ for (const [slug, label] of Object.entries(BOOKS)) {
     let data;
     try { data = await get("odds-by-tournaments", { tournamentIds: group.join(","), bookmaker: slug }); }
     catch (e) { console.log(`⚠️ ${label} ${group.map((t) => TOURNAMENTS[t]).join("/")}: ${e.message}`); continue; }
-    let n = 0;
-    for (const f of Array.isArray(data) ? data : Object.values(data)) {
+    let n = 0, debugged = false;
+    const list = Array.isArray(data) ? data : Object.values(data);
+    if (DEBUG) console.log(`   [debug] ${label}: ${list.length} fixtures returned, ${list.filter((f) => names.has(f.fixtureId)).length} in the window`);
+    for (const f of list) {
       const fx = names.get(f.fixtureId);
       if (!fx) continue; // outside the window
+      if (DEBUG && !debugged) {
+        debugged = true;
+        const raw = f.bookmakerOdds?.[slug];
+        const mks = Object.entries(raw?.markets ?? {});
+        const ours = mks.filter(([id]) => byId.has(id));
+        const inactive = ours.filter(([, m]) => m.marketActive === false).length;
+        const r = ours.find(([id]) => byId.get(id).kind === "r") ?? ours[0];
+        console.log(`   [debug] ${label} ${fx.participant1Name} v ${fx.participant2Name}: bookie keys ${Object.keys(f.bookmakerOdds ?? {}).join(",")} · active ${raw?.bookmakerIsActive} · suspended ${raw?.suspended} · ${mks.length} markets, ${ours.length} Hawk uses, ${inactive} marked inactive`);
+        if (r) console.log(`   [debug] market ${r[0]} (${byId.get(r[0]).kind} ${byId.get(r[0]).line}): ${JSON.stringify(r[1]).slice(0, 700)}`);
+        const unknown = mks.filter(([id]) => !byId.has(id)).slice(0, 8).map(([id]) => id);
+        console.log(`   [debug] sample of market IDs not used: ${unknown.join(", ")}`);
+      }
       const mp = extract(f.bookmakerOdds?.[slug]?.markets);
       if (!Object.keys(mp).length) continue;
       const g = games.get(f.fixtureId) ?? { home: fx.participant1Name, away: fx.participant2Name, kickOff: fx.startTime, code: TOURNAMENTS[fx.tournamentId], books: {} };
