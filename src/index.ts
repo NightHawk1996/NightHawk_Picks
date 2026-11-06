@@ -43,6 +43,20 @@ async function callNext(env: Env, token: string, jobs: string[]) {
   if (!jobs.length) return;
   await env.SELF!.fetch(`https://hawk.internal/internal/run?jobs=${jobs.join(",")}`, { method: "POST", headers: { "x-hawk-token": token } });
 }
+// Admin check: which bookies and markets Hawk itself has for each league's next games
+async function priceCheck(env: Env): Promise<string> {
+  const lines: string[] = [];
+  for (const code of DAILY_ORDER) {
+    const games = (await loadPrices(env.HAWK, code)).filter((g) => Date.parse(g.kickOff) > Date.now()).slice(0, 2);
+    for (const g of games) {
+      const books = Object.entries(g.byBook ?? {});
+      const full = books.filter(([b]) => b === "bet365" || b === "Paddy Power").map(([b, m]) => `${b} [${Object.keys(m).join(" ")}]${m.dc ? ` dc=${m.dc.join("/")}` : ""}`);
+      lines.push(`**${code}** ${g.home} v ${g.away}: ${books.length} bookies · ${full.join(" · ") || "no bet365/Paddy Power"}`);
+    }
+  }
+  return (lines.join("\n") || "No prices stored.").slice(0, 1990);
+}
+
 async function runNamedJob(env: Env, job: string, now: Date): Promise<string> {
   return job === "SINGLES" ? runSinglesPost(env, now)
     : job === "ACCA" ? runAccaPost(env, now)
@@ -258,6 +272,7 @@ export default {
             : league === "RACING" ? runRacingNow(env)
             : league === "RACECARDS" ? runRacingTask(env, "POST_CARDS")
             : league === "RACERESULTS" ? runRacingTask(env, "POST_RESULTS")
+            : league === "PRICECHECK" ? priceCheck(env)
             : league === "EVERYTHING" ? startChain(env, [...DAILY_ORDER, "SINGLES", "ACCA", "SPECIAL"]).then(() =>
                 `🔁 Reposting today's league posts, bet builders, NAP & singles, and accas – one step every few seconds, about 1–2 minutes in all. Each step logs to #bot-log as it finishes.`)
             : runLeaguePost(env, league, new Date(), true);

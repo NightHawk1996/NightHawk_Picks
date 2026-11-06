@@ -14,6 +14,8 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 const env = process.env;
 const DRY = process.argv.includes("--dry-run");
 const DEBUG = process.argv.includes("--debug");
+// --show Norwich : print every double chance entry for that team's game, raw, for both bookies
+const SHOW = process.argv.includes("--show") ? process.argv[process.argv.indexOf("--show") + 1]?.toLowerCase() : null;
 const KEY = env.ODDSPAPI_KEY?.trim();
 if (!KEY) throw new Error("ODDSPAPI_KEY is missing");
 if (!DRY && !(env.CF_API_TOKEN && env.CF_ACCOUNT_ID && env.CF_KV_NAMESPACE_ID)) throw new Error("Cloudflare secrets missing (CF_API_TOKEN, CF_ACCOUNT_ID, CF_KV_NAMESPACE_ID)");
@@ -133,6 +135,19 @@ for (const [slug, label] of Object.entries(BOOKS)) {
         if (r) console.log(`   [debug] market ${r[0]} (${byId.get(r[0]).kind} ${byId.get(r[0]).line}): ${JSON.stringify(r[1]).slice(0, 700)}`);
         const unknown = mks.filter(([id]) => !byId.has(id)).slice(0, 8).map(([id]) => id);
         console.log(`   [debug] sample of market IDs not used: ${unknown.join(", ")}`);
+      }
+      if (SHOW && `${fx.participant1Name} ${fx.participant2Name}`.toLowerCase().includes(SHOW)) {
+        console.log(`\n🔎 ${label} · ${fx.participant1Name} v ${fx.participant2Name}`);
+        for (const [mid, m] of Object.entries(f.bookmakerOdds?.[slug]?.markets ?? {})) {
+          const meta = byId.get(mid), raw = markets.find((x) => String(x.id) === mid);
+          if (!/double/i.test(raw?.name ?? "") && meta?.kind !== "r") continue;
+          const outs = Object.entries(m.outcomes ?? {}).map(([oid, o]) => {
+            const pl = Object.values(o.players ?? {})[0];
+            return `${oid}=${meta?.o?.[oid] ?? raw?.o?.[oid] ?? "?"} ${pl?.price ?? "-"}${pl?.active === false ? " (off)" : ""}`;
+          });
+          console.log(`   market ${mid} "${raw?.name ?? "not in Hawk's list"}" line ${raw?.h ?? "?"} kind ${meta?.kind ?? "-"}: ${outs.join(" · ")}`);
+        }
+        console.log(`   → saved as: ${JSON.stringify(extract(f.bookmakerOdds?.[slug]?.markets)).slice(0, 400)}`);
       }
       const mp = extract(f.bookmakerOdds?.[slug]?.markets);
       if (!Object.keys(mp).length) continue;

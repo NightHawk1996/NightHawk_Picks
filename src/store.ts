@@ -17,6 +17,7 @@ export interface StoredGame {
   builder: { p: number; legs: StoredLeg[] } | null;
   strong: (StoredLeg & { family: string })[]; // 80%+ legs, candidates for the acca
   gaps?: (StoredLeg & { bookies: number; best: number })[]; // 📊 bookies' price bigger than Hawk's fair price
+  mid?: StoredLeg[]; // goals, BTTS and team-to-score legs at 55–75% – tops up the singles on quiet days
   oh?: string; oa?: string; // the bookies' spelling of the teams, for finding prices later ("Hamburger SV" for HSV)
 }
 export interface StoredDay { code: string; date: string; postedAt: string; games: StoredGame[] }
@@ -52,6 +53,11 @@ export function toStoredGames(list: { m: Match; p: Predicted }[]): StoredGame[] 
       ...(p.odds ? { oh: p.odds.home, oa: p.odds.away } : {}),
       pick: { label: best.label, p: Math.round(best.p * 1000) / 1000, spec: { t: "res", v: best.side } },
       builder: p.builder ? { p: Math.round(p.builder.p * 1000) / 1000, legs: p.builder.legs.map(leg) } : null,
+      mid: p.legs
+        .filter((l) => l.p >= 0.55 && l.p <= 0.75 && (l.spec.t === "btts" || l.spec.t === "team" || (l.spec.t === "tot" && [1.5, 2.5, 3.5].includes(l.spec.x))))
+        .sort((x, y) => y.p - x.p)
+        .slice(0, 3)
+        .map(leg),
       strong: p.legs
         .filter((l) => l.p >= 0.8 && l.p < 0.95)
         .sort((x, y) => y.p - x.p)

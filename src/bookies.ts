@@ -70,9 +70,10 @@ export function price(d: number): string {
   }
   return `${Number(x.toFixed(2))}/1`; // e.g. an acca at 7.34 → "6.34/1", as bookies show it
 }
-export function bestLine(spec: LegSpec, books: BookPrices | undefined): string {
-  const best = legPrices(spec, books)[0];
-  return best ? ` · ${best.book} **${price(best.price)}**` : "";
+// Up to 3 bookies' prices for a leg, biggest first: " · Paddy Power 1/5 · bet365 2/11 · Sky Bet 1/6"
+export function bestLine(spec: LegSpec, books: BookPrices | undefined, max = 3): string {
+  const top = legPrices(spec, books).slice(0, max);
+  return top.length ? ` · ${top.map((b) => `${b.book} **${price(b.price)}**`).join(" · ")}` : "";
 }
 
 // An acca's price at each bookie that prices every leg, biggest first

@@ -204,14 +204,14 @@ Hawk's chance for each result, the bookies' chance in brackets (their margin tak
   },
   {
     title: "⭐ NAP, singles, doubles & trebles",
-    description: `**Straight wins only** – no double chances, no goals markets. Posted at 9:07 from today's games.
+    description: `**Straight wins first** – no double chances. Posted at 9:07 from today's games.
 
 **{#hawk-nap}** – the NAP: Hawk's single most confident win of the day.
 **{#hawk-singles}** – up to 5 wins Hawk rates at **55% or more**, most likely first. Each is its own bet.
 **{#hawk-doubles}** – the two most likely wins together.
 **{#hawk-trebles}** – the three most likely wins together.
 
-If there aren't enough wins at 55%+, Hawk says so rather than forcing one. Every one is graded in {#results}.`,
+**Quiet days:** if there aren't enough wins at 55%+, Hawk tops up with its best **goals, BTTS or team-to-score** picks rated **55–75%** – marked ➕. Never the 1/8 "safe" legs. With no games at all, the channels say so. Every pick is graded in {#results}.`,
   },
   {
     title: "📈 Keeping Hawk honest",
