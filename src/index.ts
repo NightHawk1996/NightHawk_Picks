@@ -10,7 +10,7 @@ import { loadTrends, raceChoices, trendsEmbed } from "./trends";
 import { loadSetPieceRatings } from "./setpiece-live";
 import { whyMenu, whyButton, parseWhy, explainMatch } from "./reasoning";
 import { racingTaskForRun, runRacingTask, runRacingNow } from "./racing";
-import { runLeaguePost, runAccaPost, runWeekendPost, runChampionsLeaguePost, runSpecialPosts, jobForRun, historyTaskForRun, runHistoryImport } from "./daily";
+import { runLeaguePost, runAccaPost, runWeekendPost, runChampionsLeaguePost, runSpecialPosts, jobForRun, historyTaskForRun, runHistoryImport, DAILY_ORDER } from "./daily";
 import { runResultsPost, hasPending } from "./results";
 import { runModelCheck } from "./modelcheck";
 import { dublinDate } from "./discord";
@@ -25,6 +25,27 @@ export interface Env {
   ODDS_API_KEY?: string;
   RACING_USER?: string;
   RACING_PASS?: string;
+  SELF?: Fetcher; // service binding to Hawk itself – lets "Repost everything" run each step separately
+}
+
+// "Repost everything": the 9am sequence, one step per Worker run so each gets its own CPU allowance.
+// Each step calls the next through the SELF binding. A one-time token (10 minutes) stops anyone
+// else triggering it through Hawk's public URL.
+async function startChain(env: Env, jobs: string[]) {
+  if (!env.SELF) throw new Error("add the SELF service binding to wrangler.toml first (see the step instructions)");
+  if (!env.HAWK) throw new Error("storage not set up");
+  const token = crypto.randomUUID();
+  await env.HAWK.put("rerun:token", token, { expirationTtl: 600 });
+  await callNext(env, token, jobs);
+}
+async function callNext(env: Env, token: string, jobs: string[]) {
+  if (!jobs.length) return;
+  await env.SELF!.fetch(`https://hawk.internal/internal/run?jobs=${jobs.join(",")}`, { method: "POST", headers: { "x-hawk-token": token } });
+}
+async function runNamedJob(env: Env, job: string, now: Date): Promise<string> {
+  return job === "ACCA" ? runAccaPost(env, now)
+    : job === "SPECIAL" ? runSpecialPosts(env, now)
+    : runLeaguePost(env, job, now);
 }
 
 const InteractionType = { PING: 1, APPLICATION_COMMAND: 2, MESSAGE_COMPONENT: 3, AUTOCOMPLETE: 4 } as const;
@@ -99,6 +120,21 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     // Visiting the URL in a browser just confirms Hawk is deployed.
     if (request.method === "GET") return new Response("🦅 Hawk is running");
+
+    // One step of "Repost everything" (called by Hawk itself, with the one-time token)
+    if (new URL(request.url).pathname === "/internal/run") {
+      const token = request.headers.get("x-hawk-token") ?? "";
+      if (!token || !env.HAWK || token !== (await env.HAWK.get("rerun:token"))) return new Response("Forbidden", { status: 403 });
+      const [job, ...rest] = (new URL(request.url).searchParams.get("jobs") ?? "").split(",").filter(Boolean);
+      if (job) {
+        ctx.waitUntil((async () => {
+          try { await runNamedJob(env, job, new Date()); } catch {}
+          if (rest.length) await callNext(env, token, rest);
+          else await env.HAWK!.delete("rerun:token");
+        })());
+      }
+      return new Response("started", { status: 202 });
+    }
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
 
     const body = await request.text();
@@ -219,6 +255,8 @@ export default {
             : league === "RACING" ? runRacingNow(env)
             : league === "RACECARDS" ? runRacingTask(env, "POST_CARDS")
             : league === "RACERESULTS" ? runRacingTask(env, "POST_RESULTS")
+            : league === "EVERYTHING" ? startChain(env, [...DAILY_ORDER, "ACCA", "SPECIAL"]).then(() =>
+                `🔁 Reposting today's league posts, bet builders and accas – one step every few seconds, about 1–2 minutes in all. Each step logs to #bot-log as it finishes.`)
             : runLeaguePost(env, league, new Date(), true);
           ctx.waitUntil(
             job

@@ -20,3 +20,7 @@ BET_BUILDERS_CHANNEL_ID = "1567485462707310593"
 
 # Secrets (set with: npx wrangler secret put NAME)
 #   DISCORD_PUBLIC_KEY, DISCORD_TOKEN, GUILD_ID, FOOTBALL_DATA_TOKEN
+
+[[services]]
+binding = "SELF"
+service = "hawk"
